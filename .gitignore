@@ -1,5 +1,25 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
+*.pyc
+*.pyo
+
+# Test / cache
+.pytest_cache/
+
+# Logs
+logs/
+*.log
+
+# Data directories
+data/
+output/
+models/
+state/
+
+# Environment
+.env
+.venv/
+venv/
 *.py[codz]
 *$py.class
 
