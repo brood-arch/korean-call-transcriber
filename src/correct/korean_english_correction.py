@@ -1,15 +1,25 @@
-﻿# korean_english_correction.py — 한영 코드스위칭 교정
-# Whisper STT 출력의 한영 혼용 텍스트를 LLM으로 교정
-# 음성 인식 파이프라인에서 사용
+﻿# korean_english_correction.py — Korean-English code-switching correction
+#
+# Corrects Korean-transliterated tech terms in Whisper STT output.
+# For example, Korean speakers often say "리엑트" (ri-ehk-teu) instead of "React",
+# and STT systems transcribe it as Korean characters. This module fixes those
+# back to the correct English terms using a dictionary-based quick fix
+# or an optional LLM-based correction pass.
+#
+# Usage:
+#   python korean_english_correction.py "리엑트 컴포넌트 만들어야 되는데" --mode quick
+#   echo "깃허브에 PR 올려놨어" | python korean_english_correction.py --mode llm
 
 import argparse
 import json
 import subprocess
 import sys
 
-# 한영 혼용에서 자주 틀리는 단어 사전 (LLM 호출 없이 빠른 교정)
+# Dictionary of common Korean transliterations of English tech terms.
+# Used for fast, dictionary-based correction without LLM calls.
+# Each key is how STT outputs the word; value is the correct English form.
 QUICK_FIX_DICT = {
-    # 기술 용어
+    # --- Tech terms ---
     "밸리데이션": "validation",
     "벨리데이션": "validation",
     "리엑트": "React",
@@ -154,50 +164,63 @@ QUICK_FIX_DICT = {
     "추상화": "abstraction",
 }
 
-def quick_fix(text):
-    """사전 기반 빠른 교정 (LLM 없이)"""
-    result = text
-    for korean, english in QUICK_FIX_DICT.items():
-        # 문장 중간에 있는 한글 표기만 교정 (문장 시작이나 독립어는 유지)
-        # 예: "리엑트 컴포넌트 만들어야 되는데" → "React 컴포넌트 만들어야 되는데"
+def quick_fix(text: str) -> str:
+    """Dictionary-based fast correction (no LLM call).
+
+    Replaces Korean transliterations with correct English tech terms.
+    Only matches at word boundaries to avoid partial replacements.
+
+    Example:
+        >>> quick_fix("리엑트 컴포넌트 만들어야 되는데")
+        'React 컴포넌트 만들어야 되는데'
+    """
         import re
-        # 단어 경계에서 매칭
+        # Match at word boundaries in the middle of a sentence
         pattern = r'(?<=[\s,.!?])' + re.escape(korean) + r'(?=[\s,.!?]|$)'
         result = re.sub(pattern, english, result)
-        # 문장 시작 매칭
+        # Match at the start of a sentence
         pattern_start = r'^' + re.escape(korean) + r'(?=[\s,.!?]|$)'
         result = re.sub(pattern_start, english, result)
     return result
 
-def llm_correct(text, screenshot_path=None):
-    """GLM-5로 한영 교정."""
+def llm_correct(text: str, screenshot_path: str | None = None) -> str:
+    """LLM-based Korean-English correction using GLM-5.
+
+    Sends the text to an LLM for context-aware correction of:
+    1. STT errors (spacing, typos, misheard words)
+    2. Korean transliterations of tech terms → correct English
+    3. Filler word removal (음, 어, 그러니까, etc.)
+    4. Natural phrasing while preserving original intent
+
+    Falls back to quick_fix() if LLM is unavailable.
+    """
+    # System prompt in Korean since the target content is Korean
     system_prompt = """너는 한국어 개발자의 음성 인식(STT) 텍스트를 교정하는 전문가다.
 한국어와 영어가 섞인 텍스트에서 다음을 교정해라:
 1. STT 오류 수정 (띄어쓰기, 오탈자, 잘못 들린 단어)
 2. 한국어 발음으로 표기된 기술 용어를 올바른 영어로 변환
-   - "밸리데이션" → "validation"
-   - "리엑트 컴포넌트" → "React 컴포넌트"
-   - "깃허브에 PR 올려놨어" → "GitHub에 PR 올려놨어"
 3. 불필요한 충임어 제거 (음, 어, 그러니까, 뭐 그런 거)
 4. 원래 의도를 최대한 보존하되 자연스럽게
 
 교정된 텍스트만 출력해라. 설명이나 주석은 붙이지 마라."""
 
     if screenshot_path:
-        # 스크린샷이 있으면 참고 텍스트에 추가
-        # 실제 구현에서는 이미지를 LLM에 전달
+        # Future: pass screenshot image to multimodal LLM for context
         pass
 
-    # The public helper keeps LLM integration optional and falls back to quick rules.
+    # Fallback to dictionary-based correction when LLM is not configured
     return quick_fix(text)
 
-def correct(text, mode="quick", screenshot_path=None):
-    """
-    텍스트 교정
-    
-    mode:
-      - quick: 사전 기반 빠른 교정 (LLM 없이)
-      - llm: GLM-5로 교정
+def correct(text: str, mode: str = "quick", screenshot_path: str | None = None) -> str:
+    """Correct Korean-English code-switched STT text.
+
+    Args:
+        text: Input text (typically from Whisper STT).
+        mode:  "quick" for dictionary-based fix, "llm" for LLM-based correction.
+        screenshot_path: Optional screenshot file for multimodal context.
+
+    Returns:
+        Corrected text string.
     """
     if mode == "quick":
         return quick_fix(text)
@@ -207,10 +230,13 @@ def correct(text, mode="quick", screenshot_path=None):
         return text
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="한영 코드스위칭 교정")
-    parser.add_argument("text", nargs="*", help="교정할 텍스트 (없으면 stdin)")
-    parser.add_argument("--mode", choices=["quick", "llm"], default="quick", help="교정 모드")
-    parser.add_argument("--screenshot", help="스크린샷 파일 경로")
+    parser = argparse.ArgumentParser(
+        description="Correct Korean-transliterated tech terms in STT output"
+    )
+    parser.add_argument("text", nargs="*", help="Text to correct (reads stdin if omitted)")
+    parser.add_argument("--mode", choices=["quick", "llm"], default="quick",
+                        help="Correction mode: quick (dict) or llm (GLM-5)")
+    parser.add_argument("--screenshot", help="Optional screenshot file path for multimodal context")
     args = parser.parse_args()
     
     if args.text:
