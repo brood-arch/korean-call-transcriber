@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Pipeline health check: detect missed transcriptions and failed notifications."""
 
 import json
@@ -10,18 +10,11 @@ from datetime import datetime, timezone, timedelta
 KST = timezone(timedelta(hours=9))
 
 try:
-    from src.pipeline.paths import TRANSCRIPT_DIR, AUDIO_DIR, STATE_DIR
+    from pipeline_paths import TRANSCRIPT_DIR, AUDIO_DIR, STATE_DIR
 except Exception:
-    def win_path(path: str) -> Path:
-        """Translate Windows drive paths when this script is run from WSL/Linux."""
-        if os.name != "nt" and len(path) >= 3 and path[1:3] == ":\\":
-            drive = path[0].lower()
-            rest = path[3:].replace("\\", "/")
-            return Path(f"/mnt/{drive}/{rest}")
-        return Path(path)
-    TRANSCRIPT_DIR = win_Path(os.environ.get("KCT_TRANSCRIPT_DIR", "output/transcripts"))
-    AUDIO_DIR = win_Path(os.environ.get("KCT_AUDIO_DIR", "data/audio"))
-    STATE_DIR = win_path(r".\memory\state")
+    TRANSCRIPT_DIR = Path(os.environ.get("TRANSCRIPT_DIR", "./data/transcripts"))
+    AUDIO_DIR = Path(os.environ.get("AUDIO_DIR", "./data/audio"))
+    STATE_DIR = Path(os.environ.get("KCT_STATE_DIR", "./state"))
 
 STATE_FILE = STATE_DIR / "call_recordings_automation_state.json"
 BLACKLIST_FILE = STATE_DIR / "transcribe_blacklist.json"
@@ -37,7 +30,7 @@ def canonical_transcript_stem(stem: str) -> str:
     """
     import re
 
-    m = re.match(r"^(.+_\d{14})_\d{6}$", stem)
+    m = re.match(r"^((?:.+_)?\d{10,11}_\d{14})_\d{6}$", stem)
     return m.group(1) if m else stem
 
 
@@ -93,7 +86,24 @@ def main():
             print(f"  ⏳ {name} (pending, <30min old)")
 
     # Check 2: Transcripts not processed for TODO extraction (last 3 hours)
+    # Files marked as "skipped_fast_score" or "fallback" are considered processed.
     unprocessed = []
+    processed_stems = set()
+    # Load batch results to find skipped/fast_score files
+    extract_dir = STATE_DIR / "integrated_extraction"
+    if extract_dir.exists():
+        for bf in extract_dir.glob("batch_*.json"):
+            try:
+                bd = json.loads(bf.read_text("utf-8"))
+                for r in bd.get("results", []):
+                    if isinstance(r, dict):
+                        status = r.get("status", "")
+                        if status in ("ok", "fallback", "skipped_fast_score"):
+                            stem = r.get("file", "")
+                            if stem:
+                                processed_stems.add(stem)
+            except Exception:
+                pass
     for f in sorted(TRANSCRIPT_DIR.glob("*.txt")):
         mtime = datetime.fromtimestamp(f.stat().st_mtime, tz=KST)
         if mtime < cutoff_lower:
@@ -102,11 +112,12 @@ def main():
             continue
         canonical_stem = canonical_transcript_stem(f.stem)
         if canonical_stem != f.stem and (AUDIO_DIR / f"{canonical_stem}.m4a").exists():
-            # Derivative recheck artifacts are intentionally not fed through
-            # TODO extraction as separate call transcripts.
             continue
-        if canonical_stem not in pt:
-            unprocessed.append(f.name)
+        if canonical_stem in pt:
+            continue
+        if canonical_stem in processed_stems:
+            continue
+        unprocessed.append(f.name)
 
     if unprocessed:
         issues.append(f"UNPROCESSED_TODOS: {len(unprocessed)} transcripts not processed for TODOs")
@@ -133,5 +144,3 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-
-
