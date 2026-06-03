@@ -10,8 +10,6 @@ Usage:
 import argparse
 import json
 import os
-import re
-import sys
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -138,7 +136,7 @@ def call_llm(content: str) -> dict:
 def parse_schedule_response(text: str) -> dict:
     cleaned = text.strip()
     if cleaned.startswith("```"):
-        lines = [l for l in cleaned.split("\n") if not l.strip().startswith("```")]
+        lines = [line for line in cleaned.split("\n") if not line.strip().startswith("```")]
         cleaned = "\n".join(lines)
 
     try:

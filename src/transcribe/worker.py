@@ -28,9 +28,8 @@ LANGUAGE = "ko"
 
 
 # ffmpeg setup — ensure Scripts dir is in PATH (has ffmpeg.exe)
-import os as _os
 _scripts_dir = str(Path(sys.executable).parent)
-_os.environ["PATH"] = _scripts_dir + _os.pathsep + _os.environ.get("PATH", "")
+os.environ["PATH"] = _scripts_dir + os.pathsep + os.environ.get("PATH", "")
 
 
 def get_audio_duration(path):
@@ -140,8 +139,6 @@ def transcribe_file(audio_path, model_path, compute_type, language, beam_size, o
         seg_rows, info = _run(audio_path, offset=0.0)
         duration = info.duration
 
-    # Quality meta
-    avg_logprob = 0.0
     quality_meta = {
         "duration": round(duration, 1),
         "language": language,

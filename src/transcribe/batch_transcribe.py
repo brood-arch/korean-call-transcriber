@@ -21,7 +21,6 @@ Configuration via environment variables:
 """
 
 import argparse
-import gc
 import json
 import logging
 import os
@@ -534,7 +533,7 @@ def main():
             if audio_dur >= LONG_AUDIO_FAST_PATH_SEC:
                 final_segments = segments
                 align_meta = {"align_ok": True, "diarize_ok": True, "device": "skipped_long_audio"}
-                print(f"  ⚡ Long audio fast path: skipping align/diarize", flush=True)
+                print("  ⚡ Long audio fast path: skipping align/diarize", flush=True)
             else:
                 final_segments, align_meta = align_and_diarize_subprocess(audio_path, segments, args.no_diarize)
                 if final_segments is None:

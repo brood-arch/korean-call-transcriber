@@ -18,7 +18,6 @@ import argparse
 import hashlib
 import json
 import os
-import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -98,7 +97,7 @@ def call_llm(content: str) -> dict | None:
                 time.sleep(15 * (attempt + 1))
             elif attempt < len(RETRY_BACKOFF):
                 time.sleep(RETRY_BACKOFF[attempt])
-        except Exception as e:
+        except Exception:
             if attempt < len(RETRY_BACKOFF):
                 time.sleep(RETRY_BACKOFF[attempt])
     return None
@@ -108,7 +107,7 @@ def parse_entity_response(text: str) -> dict:
     cleaned = text.strip()
     if cleaned.startswith("```"):
         lines = cleaned.split("\n")
-        lines = [l for l in lines if not l.strip().startswith("```")]
+        lines = [line for line in lines if not line.strip().startswith("```")]
         cleaned = "\n".join(lines)
 
     try:

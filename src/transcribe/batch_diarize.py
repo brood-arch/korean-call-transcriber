@@ -12,7 +12,6 @@ import json
 import os
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 WORKSPACE = Path(__file__).resolve().parent.parent
@@ -75,13 +74,8 @@ def main():
             transcript_dir = Path(args.transcript_dir)
         else:
             transcript_dir = Path("data/전사본")
-        if args.audio_dir:
-            audio_dir = Path(args.audio_dir)
-        else:
-            audio_dir = Path("data/통화녹음")
     else:
         transcript_dir = Path(args.transcript_dir or WIN_TRANSCRIPT_DIR)
-        audio_dir = Path(args.audio_dir or WIN_AUDIO_DIR)
 
     if not transcript_dir.exists():
         print(f"ERROR: transcript dir not found: {transcript_dir}")
@@ -169,7 +163,7 @@ def main():
                     print(f"  stderr: {result.stderr[-500:]}")
                 fail += 1
         except subprocess.TimeoutExpired:
-            print(f"  TIMEOUT")
+            print("  TIMEOUT")
             fail += 1
         except Exception as e:
             print(f"  ERROR: {e}")

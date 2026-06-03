@@ -30,7 +30,7 @@ def canonical_transcript_stem(stem: str) -> str:
     """
     import re
 
-    m = re.match(r"^((?:.+_)?\d{10,11}_\d{14})_\d{6}$", stem)
+    m = re.match(r"^(.+_\d{14})_\d{6}$", stem)
     return m.group(1) if m else stem
 
 
@@ -139,7 +139,7 @@ def main():
             print(f"  🔴 {issue}")
         return 1
     else:
-        print(f"PIPELINE HEALTHY: All recent files processed")
+        print("PIPELINE HEALTHY: All recent files processed")
         return 0
 
 if __name__ == "__main__":

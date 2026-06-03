@@ -11,8 +11,6 @@
 #   echo "깃허브에 PR 올려놨어" | python korean_english_correction.py --mode llm
 
 import argparse
-import json
-import subprocess
 import sys
 
 # Dictionary of common Korean transliterations of English tech terms.
@@ -113,10 +111,8 @@ QUICK_FIX_DICT = {
     "스테이트": "state",
     "프롭스": "props",
     "훅": "hook",
-    "미들웨어": "middleware",
     "디스패치": "dispatch",
     "리듀서": "reducer",
-    "미들웨어": "middleware",
     "토큰": "token",
     "쿠키": "cookie",
     "세션": "session",
@@ -130,7 +126,6 @@ QUICK_FIX_DICT = {
     "바디": "body",
     "쿼리": "query",
     "파람": "param",
-    "디비": "DB",
     "테이블": "table",
     "컬럼": "column",
     "로우": "row",
@@ -151,7 +146,6 @@ QUICK_FIX_DICT = {
     "딕셔너리": "dictionary",
     "트리": "tree",
     "그래프": "graph",
-    "노드": "node",
     "엣지": "edge",
     "버텍스": "vertex",
     "포인터": "pointer",
@@ -174,12 +168,15 @@ def quick_fix(text: str) -> str:
         >>> quick_fix("리엑트 컴포넌트 만들어야 되는데")
         'React 컴포넌트 만들어야 되는데'
     """
-        import re
+    import re
+
+    result = text
+    for korean, english in QUICK_FIX_DICT.items():
         # Match at word boundaries in the middle of a sentence
-        pattern = r'(?<=[\s,.!?])' + re.escape(korean) + r'(?=[\s,.!?]|$)'
+        pattern = r"(?<=[\s,.!?])" + re.escape(korean) + r"(?=[\s,.!?]|$)"
         result = re.sub(pattern, english, result)
         # Match at the start of a sentence
-        pattern_start = r'^' + re.escape(korean) + r'(?=[\s,.!?]|$)'
+        pattern_start = r"^" + re.escape(korean) + r"(?=[\s,.!?]|$)"
         result = re.sub(pattern_start, english, result)
     return result
 
@@ -194,16 +191,6 @@ def llm_correct(text: str, screenshot_path: str | None = None) -> str:
 
     Falls back to quick_fix() if LLM is unavailable.
     """
-    # System prompt in Korean since the target content is Korean
-    system_prompt = """너는 한국어 개발자의 음성 인식(STT) 텍스트를 교정하는 전문가다.
-한국어와 영어가 섞인 텍스트에서 다음을 교정해라:
-1. STT 오류 수정 (띄어쓰기, 오탈자, 잘못 들린 단어)
-2. 한국어 발음으로 표기된 기술 용어를 올바른 영어로 변환
-3. 불필요한 충임어 제거 (음, 어, 그러니까, 뭐 그런 거)
-4. 원래 의도를 최대한 보존하되 자연스럽게
-
-교정된 텍스트만 출력해라. 설명이나 주석은 붙이지 마라."""
-
     if screenshot_path:
         # Future: pass screenshot image to multimodal LLM for context
         pass
@@ -250,5 +237,3 @@ if __name__ == "__main__":
     
     result = correct(input_text, mode=args.mode, screenshot_path=args.screenshot)
     print(result)
-
-

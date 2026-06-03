@@ -31,9 +31,7 @@ import os
 import subprocess
 import sys
 import time
-import uuid
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
+from datetime import timezone, timedelta
 from typing import Optional
 
 try:

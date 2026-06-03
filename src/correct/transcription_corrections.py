@@ -177,7 +177,7 @@ def log_event(event: dict[str, Any]) -> None:
             with LOG_PATH.open("a", encoding="utf-8") as f:
                 f.write(line)
             return
-        except (OSError, IOError) as e:
+        except (OSError, IOError):
             if attempt < 2:
                 time.sleep(0.1 * (attempt + 1))
             else:

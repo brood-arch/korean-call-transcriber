@@ -11,7 +11,6 @@ This script ONLY imports whisperx (no faster_whisper/ctranslate2).
 import argparse
 import gc
 import json
-import logging
 import os
 import subprocess
 import sys
@@ -23,8 +22,8 @@ os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 import warnings
 warnings.filterwarnings("ignore")
 
-import numpy as np
-import torch
+import numpy as np  # noqa: E402
+import torch  # noqa: E402
 
 
 # ── Logging ──────────────────────────────────────────────────────────────

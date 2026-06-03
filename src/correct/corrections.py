@@ -10,8 +10,8 @@ Rules are loaded from a JSON file with hot-reload support (file mtime tracking).
 from __future__ import annotations
 
 import json
+import os
 import re
-import sys
 import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -26,8 +26,6 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 _PROJECT_ROOT = _SCRIPT_DIR.parent.parent
 
 KST = timezone(timedelta(hours=9))
-
-import os
 
 RULES_PATH = Path(os.environ.get(
     "CORRECTION_RULES_PATH",

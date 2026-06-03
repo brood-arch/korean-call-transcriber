@@ -247,7 +247,6 @@ def _wsl_to_win_path(wsl_path: str) -> str:
 
 
 def command_for_entry(entry: dict[str, Any], workspace: Path) -> list[str]:
-    scripts = workspace / "src"
     action = str(entry.get("next_action"))
     source_path = entry.get("source_path")
 

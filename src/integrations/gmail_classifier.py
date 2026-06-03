@@ -18,7 +18,6 @@ import imaplib
 import email as email_lib
 from email.header import decode_header
 import os
-import re
 from datetime import datetime
 from typing import Optional
 
@@ -201,19 +200,19 @@ def run_auto_classifier() -> dict:
 
     results = scan_inbox(max_emails=50)
 
-    print(f"\n[Results]")
+    print("\n[Results]")
     print(f"  - Ads: {len(results['ads'])}")
     print(f"  - Important: {len(results['important'])}")
     print(f"  - Normal: {len(results['normal'])}")
 
     if results["important"]:
-        print(f"\n[Important Emails]:")
+        print("\n[Important Emails]:")
         for i, em in enumerate(results["important"], 1):
             print(f"  {i}. {em['subject']}")
             print(f"     From: {em['sender']}")
 
     if results["ads"]:
-        print(f"\n[Ads to Move to Trash]:")
+        print("\n[Ads to Move to Trash]:")
         for i, em in enumerate(results["ads"], 1):
             print(f"  {i}. {em['subject']}")
 

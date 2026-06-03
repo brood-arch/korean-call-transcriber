@@ -135,7 +135,7 @@ def build_markdown(parsed: dict, content: str, source_path: Path) -> str:
 
     lines = [
         "---",
-        f"type: transcript",
+        "type: transcript",
         f"counterparty: \"{cp or ''}\"",
         f"phone: \"{phone}\"",
         f"date: {date}",
@@ -270,14 +270,9 @@ def main():
     total = len(source_files)
     print(f"📂 소스 파일: {total}개")
 
-    # 처리 대상 필터링
-    to_process = []
     skipped_existing = 0
     skipped_parse = 0
     skipped_short = 0
-
-    # 날짜+거래처별 파일 카운트 (파일명 결정용)
-    date_cp_count = defaultdict(int)
 
     # 먼저 모든 파일의 파싱 결과를 수집하여 카운트
     parsed_files = []
@@ -323,7 +318,6 @@ def main():
                 continue
 
             # 파일명 결정: 같은 key에 여러 파일이면 시간 포함
-            idx = key_index[key]
             has_duplicates = key_counts[key] > 1
             key_index[key] += 1
 
@@ -392,7 +386,7 @@ def main():
         for e in errors[:10]:
             print(f"   {e}")
     if args.dry_run:
-        print(f"\n💨 dry-run 모드 — 실제 저장 안 함")
+        print("\n💨 dry-run 모드 — 실제 저장 안 함")
 
 
 if __name__ == "__main__":

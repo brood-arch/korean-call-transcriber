@@ -244,7 +244,7 @@ def merge_todos(store: dict, new_todos: list) -> list:
             continue
 
         # Fuzzy dedup against existing
-        if _is_fuzzy_match(title, existing_titles):
+        if any(_is_fuzzy_match(title, existing) for existing in existing_titles):
             log.info("Fuzzy dedup: '%s' matches existing, skipping", title)
             continue
 

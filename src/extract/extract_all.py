@@ -21,7 +21,6 @@ import json
 import os
 import sys
 import time
-import traceback
 import uuid
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -50,7 +49,9 @@ def _get_fast_score():
                 from signal_detector import fast_score_transcript
                 _fast_score_fn = fast_score_transcript
             except ImportError:
-                _fast_score_fn = lambda text: {"score": 1.0, "band": "definite_keep", "should_process": True, "signals": {}, "drop_reason": None}
+                def default_fast_score(text):
+                    return {"score": 1.0, "band": "definite_keep", "should_process": True, "signals": {}, "drop_reason": None}
+                _fast_score_fn = default_fast_score
     return _fast_score_fn
 
 KST = timezone(timedelta(hours=9))
@@ -362,7 +363,7 @@ def parse_unified_response(text: str) -> dict:
     # Strip markdown code blocks
     if cleaned.startswith("```"):
         lines = cleaned.split("\n")
-        lines = [l for l in lines if not l.strip().startswith("```")]
+        lines = [line for line in lines if not line.strip().startswith("```")]
         cleaned = "\n".join(lines)
     
     try:
@@ -1132,7 +1133,7 @@ class IntegratedPipeline:
         
         # Final summary
         print(f"\n{'='*60}")
-        print(f"INTEGRATED EXTRACTION COMPLETE")
+        print("INTEGRATED EXTRACTION COMPLETE")
         print(f"{'='*60}")
         print(f"Run ID:       {self.run_id}")
         print(f"Batches:      {self.stats['batches_done']}/{total_batches}")
@@ -1150,7 +1151,7 @@ class IntegratedPipeline:
         print(f"New TODOs:    {self.stats.get('new_todos', 0)} (synced to persistent_todos.json)")
         if self._last_notifications:
             print(f"Notifications:{len(self._last_notifications)} attempted")
-        print(f"~60-70% fewer LLM calls vs. separate scripts")
+        print("~60-70% fewer LLM calls vs. separate scripts")
         print(f"{'='*60}")
         
         # TODO alert fallback: print full active report only if Telegram did not
@@ -1201,8 +1202,8 @@ def dry_run(args):
         print(f"\nSample: {sample.name} ({len(content)} chars)")
         print(f"  Preview: {content[:80].strip()}...")
     
-    print(f"\nDry run PASSED.")
-    print(f"Command: python extract_all.py")
+    print("\nDry run PASSED.")
+    print("Command: python extract_all.py")
     return True
 
 
