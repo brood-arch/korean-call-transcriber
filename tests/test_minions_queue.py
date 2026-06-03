@@ -1,7 +1,8 @@
 """Tests for src.pipeline.minions_queue — job submission, lifecycle, stats (mocked DB)."""
 
 import json
-from unittest.mock import MagicMock
+import sys
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -210,12 +211,16 @@ def test_execute_shell_cmd(_mock_psycopg2, monkeypatch):
     monkeypatch.setenv("KCT_ENABLE_SHELL_JOBS", "1")
     mq, _ = _make_queue(_mock_psycopg2)
     job = {
-        "payload": json.dumps({"cmd": "echo hello"}),
+        "payload": json.dumps({"cmd": f'{sys.executable} -c "print(\'hello\')"'}),
         "timeout_ms": 5000,
     }
-    result = mq.execute_shell(job)
+    completed = MagicMock(returncode=0, stdout="hello\n", stderr="")
+    with patch("src.pipeline.minions_queue.subprocess.run", return_value=completed) as run:
+        result = mq.execute_shell(job)
+
     assert result["exit_code"] == 0
     assert "hello" in result["stdout"]
+    assert "shell" not in run.call_args.kwargs
 
 
 def test_execute_shell_cmd_disabled_by_default(_mock_psycopg2, monkeypatch):

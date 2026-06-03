@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 import sys
 import time
@@ -492,8 +493,13 @@ class MinionsQueue:
                         "exit_code": 2,
                         "error": "Shell command payloads are disabled by default. Set KCT_ENABLE_SHELL_JOBS=1 for trusted local automation.",
                     }
+                # Prefer argv split over shell=True to reduce injection risk.
+                try:
+                    parsed_argv = shlex.split(cmd, posix=(os.name != "nt"))
+                except ValueError as exc:
+                    return {"exit_code": 2, "error": f"Invalid cmd payload: {exc}"}
                 proc = subprocess.run(
-                    cmd, shell=True, cwd=cwd, env=run_env,
+                    parsed_argv, cwd=cwd, env=run_env,
                     capture_output=True, text=True, timeout=timeout,
                 )
             elif argv:

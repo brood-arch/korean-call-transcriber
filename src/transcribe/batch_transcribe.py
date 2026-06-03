@@ -248,7 +248,7 @@ def map_speakers(segments: list[dict], caller_name: str, caller_phone: str) -> l
     2. Greeting patterns (first greeter = caller in outgoing calls)
     3. Honorific patterns (counterpart uses honorifics toward the user)
     """
-    if not caller_name or not any("speaker" in str(s.get("speaker", "")) for s in segments):
+    if not caller_name or not any("SPEAKER" in str(s.get("speaker", "")).upper() for s in segments):
         return segments
 
     speakers = set(seg.get("speaker") for seg in segments if seg.get("speaker"))
