@@ -24,11 +24,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-# Add workspace root to path
-WORKSPACE = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(WORKSPACE))
+from src.pipeline.utils import compress_transcript, fallback_summary
 
-# Relative imports from sibling modules
 from .client import call_zai_extract
 from .prompt import setup_langfuse
 from .state import (
@@ -47,10 +44,7 @@ from .state import (
     track_notified,
 )
 
-try:
-    from scripts.pipeline_utils import compress_transcript, fallback_summary
-except ImportError:
-    from pipeline_utils import compress_transcript, fallback_summary
+WORKSPACE = Path(__file__).resolve().parents[2]
 
 # Lazy import for fast_score_transcript (avoids circular / heavy init at module load)
 _fast_score_fn = None
@@ -58,11 +52,11 @@ def _get_fast_score():
     global _fast_score_fn
     if _fast_score_fn is None:
         try:
-            from scripts.signal_detector import fast_score_transcript
+            from .signal_detector import fast_score_transcript
             _fast_score_fn = fast_score_transcript
         except ImportError:
             try:
-                from signal_detector import fast_score_transcript
+                from src.knowledge.signal_detector import fast_score_transcript
                 _fast_score_fn = fast_score_transcript
             except ImportError:
                 def default_fast_score(text):

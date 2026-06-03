@@ -19,7 +19,7 @@ WIN_PYTHON = r".\tools\whisperx-venv\Scripts\python.exe"
 WIN_ALIGN_WORKER = os.environ.get("KCT_ALIGN_WORKER", r"src\transcribe\align_worker.py")
 WIN_AUDIO_DIR = os.environ.get("KCT_AUDIO_DIR", "data/audio")
 WIN_TRANSCRIPT_DIR = os.environ.get("KCT_TRANSCRIPT_DIR", "output/transcripts")
-HF_TOKEN_FILE = r".\memory\api-keys\pyannote_hf_token.txt"
+HF_TOKEN_FILE = os.environ.get("HF_TOKEN_FILE", "")
 CMD_EXE = "/mnt/c/Windows/System32/cmd.exe"
 
 

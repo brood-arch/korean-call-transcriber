@@ -130,6 +130,16 @@ def safe_save_json(path, data, origin: str | None = None):
     tmp.replace(path)
 
 
+def safe_read_json(path, default=None):
+    """Compatibility alias for modules that use read/write naming."""
+    return safe_load_json(path, default=default)
+
+
+def safe_write_json(path, data, origin: str | None = None):
+    """Compatibility alias for modules that use read/write naming."""
+    return safe_save_json(path, data, origin=origin)
+
+
 # ── Token compression (inspired by OpenHuman TokenJuice concept) ──────────
 # Adapted for Korean call transcripts: reduce token count before LLM API calls
 # to cut ZAI API costs without losing signal quality.

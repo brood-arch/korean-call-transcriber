@@ -12,25 +12,16 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-# Add workspace root to path for imports
-WORKSPACE = Path(__file__).resolve().parent.parent
-import sys as _sys
+from src.pipeline.utils import (
+    normalize_source,
+    normalize_title,
+    parse_call_context,
+    safe_load_json,
+    safe_save_json,
+)
+from src.todo.persistent_store import merge_todos, todo_key
 
-if str(WORKSPACE) not in _sys.path:
-    _sys.path.insert(0, str(WORKSPACE))
-
-try:
-    from scripts.persistent_todo_store import merge_todos, todo_key
-    from scripts.pipeline_utils import (
-        normalize_source,
-        normalize_title,
-        parse_call_context,
-        safe_load_json,
-        safe_save_json,
-    )
-except ImportError:
-    from persistent_todo_store import merge_todos, todo_key
-    from pipeline_utils import normalize_source, normalize_title, parse_call_context, safe_load_json, safe_save_json
+WORKSPACE = Path(__file__).resolve().parents[2]
 
 KST = timezone(timedelta(hours=9))
 
