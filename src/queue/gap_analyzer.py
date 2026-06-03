@@ -17,25 +17,16 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import re
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from src.config import AUDIO_DIR, LOG_DIR, STATE_DIR, TRANSCRIPT_DIR, WORKSPACE
+
 KST = timezone(timedelta(hours=9))
 log = logging.getLogger(__name__)
-
-try:
-    from src.pipeline.paths import AUDIO_DIR, LOG_DIR, STATE_DIR, TRANSCRIPT_DIR, WORKSPACE
-except Exception as exc:
-    log.debug("Falling back to local gap analyzer paths: %s", exc)
-    WORKSPACE = Path(os.environ.get("KCT_WORKSPACE", Path.cwd()))
-    AUDIO_DIR = Path(os.environ.get("KCT_AUDIO_DIR", WORKSPACE / "data" / "audio"))
-    TRANSCRIPT_DIR = Path(os.environ.get("KCT_TRANSCRIPT_DIR", WORKSPACE / "output" / "transcripts"))
-    STATE_DIR = Path(os.environ.get("KCT_STATE_DIR", WORKSPACE / "state"))
-    LOG_DIR = Path(os.environ.get("KCT_LOG_DIR", WORKSPACE / "logs"))
 
 DEFAULT_AUDIO_DIR = AUDIO_DIR
 DEFAULT_TRANSCRIPT_DIR = TRANSCRIPT_DIR

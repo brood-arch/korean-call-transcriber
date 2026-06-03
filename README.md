@@ -110,15 +110,24 @@ See [docs/architecture.md](docs/architecture.md) for detailed documentation.
 ### Installation
 
 ```bash
+# Clone and install (editable mode)
 git clone https://github.com/brood-arch/korean-call-transcriber.git
 cd korean-call-transcriber
-pip install -r requirements.txt
-pip install -e .
 
-# Copy and edit environment config
-cp .env.example .env
-# Edit .env with your API keys and paths
+# Basic development setup (no GPU deps)
+pip install -e ".[dev]"
+
+# With GPU transcription support (requires CUDA)
+pip install -e ".[gpu,dev]"
+
+# With Minions job queue (requires PostgreSQL + psycopg2)
+pip install -e ".[queue,dev]"
+
+# Everything
+pip install -e ".[all,dev]"
 ```
+
+See `pyproject.toml` `[project.optional-dependencies]` for available extras.
 
 ### Usage
 

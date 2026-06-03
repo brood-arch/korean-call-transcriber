@@ -10,21 +10,27 @@ Usage:
 import argparse
 import json
 import logging
-import os
 import subprocess
 import sys
 from pathlib import Path
 
-from src.config import HF_TOKEN_FILE
+from src.config import (
+    HF_TOKEN_FILE,
+)
+from src.config import (
+    KCT_ALIGN_WORKER as WIN_ALIGN_WORKER,
+)
+from src.config import (
+    TRANSCRIPT_DIR as WIN_TRANSCRIPT_DIR,
+)
+from src.config import (
+    WHISPERX_PYTHON as WIN_PYTHON,
+)
 from src.pipeline.paths import is_wsl
 from src.pipeline.paths import wsl_to_win as wsl_path_to_windows
 
 log = logging.getLogger(__name__)
 
-WIN_PYTHON = r".\tools\whisperx-venv\Scripts\python.exe"
-WIN_ALIGN_WORKER = os.environ.get("KCT_ALIGN_WORKER", r"src\transcribe\align_worker.py")
-WIN_AUDIO_DIR = os.environ.get("KCT_AUDIO_DIR", "data/audio")
-WIN_TRANSCRIPT_DIR = os.environ.get("KCT_TRANSCRIPT_DIR", "output/transcripts")
 CMD_EXE = "/mnt/c/Windows/System32/cmd.exe"
 
 
@@ -124,7 +130,7 @@ def main():
             # Run Windows Python directly from WSL without cmd.exe.
             # subprocess(list) preserves spaces in data safely.
             wsl_python = "~/.openclaw/workspace/tools/whisperx-venv/Scripts/python.exe"
-            win_script = os.environ.get("KCT_ALIGN_WORKER", r"src\transcribe\align_worker.py")
+            win_script = str(WIN_ALIGN_WORKER)
             argv = [wsl_python, "-u", win_script, "--audio", win_audio, "--segments", win_segs, "--token", win_token]
         else:
             argv = [python_exe, "-u", script, "--audio", win_audio, "--segments", win_segs, "--token", win_token]

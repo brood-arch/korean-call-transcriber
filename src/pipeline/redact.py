@@ -9,22 +9,31 @@ import re
 _PHONE_RE = re.compile(
     r"(?<!\d)"
     r"(?:"
-    # International +82 prefix (no leading 0)
+    # International +82 prefix — mobile (no leading 0)
     r"(?:\+82[- ]?)1[016-9][- ]?\d{3,4}[- ]?\d{4}"
+    r"|"
+    # International +82 prefix — landline (no leading 0)
+    r"(?:\+82[- ]?)[2-6][1-4]?[- ]?\d{3,4}[- ]?\d{4}"
+    r"|"
+    # International +82 prefix — VoIP/toll (no leading 0)
+    r"(?:\+82[- ]?)(?:70|80)[- ]?\d{3,4}[- ]?\d{4}"
+    r"|"
+    # International +82 prefix — toll-free 1588/1644
+    r"(?:\+82[- ]?)1[56]\d{2}[- ]?\d{4}"
     r"|"
     # Domestic 01x mobile
     r"01[016-9][- ]?\d{3,4}[- ]?\d{4}"
     r"|"
-    # Landline area codes
+    # Domestic landline area codes
     r"0[2-6][1-4]?[- ]?\d{3,4}[- ]?\d{4}"
     r"|"
-    # VoIP / toll
+    # Domestic VoIP / toll
     r"0(?:70|80)[- ]?\d{3,4}[- ]?\d{4}"
     r"|"
-    # Toll-free 1588 etc
+    # Domestic toll-free 1588 etc
     r"15\d{2}[- ]?\d{4}"
     r"|"
-    # Toll-free 1644 etc
+    # Domestic toll-free 1644 etc
     r"16\d{2}[- ]?\d{4}"
     r")"
     r"(?!\d)"

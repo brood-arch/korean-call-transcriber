@@ -44,13 +44,6 @@ try:
 except ImportError:
     psycopg2 = None  # type: ignore
 
-try:
-    from src.pipeline.utils import redact_sensitive_text
-except Exception:
-    def redact_sensitive_text(text: str, limit: int | None = None) -> str:
-        value = str(text or "")
-        return value[-limit:] if limit is not None else value
-
 from src.config import (
     KCT_ENABLE_SHELL_JOBS,
     MINIONS_DB_HOST,
@@ -60,6 +53,7 @@ from src.config import (
     MINIONS_DB_URL,
     MINIONS_DB_USER,
 )
+from src.pipeline.utils import redact_sensitive_text
 
 KST = timezone(timedelta(hours=9))
 

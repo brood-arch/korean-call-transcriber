@@ -37,30 +37,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
+from src.config import LOG_DIR, STATE_DIR, WORKSPACE
+from src.pipeline.paths import is_wsl
+from src.pipeline.utils import redact_sensitive_text, safe_write_text
+
 KST = timezone(timedelta(hours=9))
 
 log = logging.getLogger(__name__)
-
-try:
-    from src.pipeline.paths import LOG_DIR, STATE_DIR, WORKSPACE, is_wsl
-    from src.pipeline.utils import redact_sensitive_text, safe_write_text
-except Exception:
-    WORKSPACE = Path(os.environ.get("KCT_WORKSPACE", Path.cwd()))
-    STATE_DIR = Path(os.environ.get("KCT_STATE_DIR", WORKSPACE / "state"))
-    LOG_DIR = Path(os.environ.get("KCT_LOG_DIR", WORKSPACE / "logs"))
-
-    def is_wsl() -> bool:
-        return False
-
-    def redact_sensitive_text(text: str, limit: int | None = None) -> str:
-        value = str(text or "")
-        return value[-limit:] if limit is not None else value
-
-    def safe_write_text(path: Path, content: str) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(content, encoding="utf-8", newline="\n")
-        tmp.replace(path)
 
 DEFAULT_QUEUE_PATH = STATE_DIR / "transcription_retry_queue.jsonl"
 DEFAULT_REPORT_PATH = WORKSPACE / "reports" / "transcription_health_taxonomy.json"

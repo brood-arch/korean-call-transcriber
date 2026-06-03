@@ -39,6 +39,24 @@ class TestPhoneRedaction:
     def test_plus82_no_separator(self):
         assert "REDACTED" in redact_sensitive_text("+821012345678")
 
+    def test_plus82_seoul_landline(self):
+        assert "REDACTED" in redact_sensitive_text("+82-2-123-4567")
+
+    def test_plus82_gyeonggi_landline(self):
+        assert "REDACTED" in redact_sensitive_text("+82-31-123-4567")
+
+    def test_plus82_busan_landline(self):
+        assert "REDACTED" in redact_sensitive_text("+82-51-123-4567")
+
+    def test_plus82_mobile_no_hyphen(self):
+        assert "REDACTED" in redact_sensitive_text("+821012345678")
+
+    def test_plus82_landline_no_hyphen(self):
+        assert "REDACTED" in redact_sensitive_text("+8221234567")
+
+    def test_plus82_1588(self):
+        assert "REDACTED" in redact_sensitive_text("+82-1588-1234")
+
     def test_normal_number_not_redacted(self):
         text = "Model ABC-1234-5678"
         result = redact_sensitive_text(text)

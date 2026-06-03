@@ -14,32 +14,17 @@ vault folder, with an optional contact index.
 import argparse
 import json
 import logging
-import os
 import re
 import sys
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
+from src.config import OBSIDIAN_VAULT, STATE_DIR
+from src.config import TRANSCRIPT_DIR as SOURCE_DIR
+from src.pipeline.utils import safe_save_json, safe_write_text
+
 log = logging.getLogger(__name__)
-
-try:
-    from src.pipeline.paths import OBSIDIAN_VAULT, STATE_DIR
-    from src.pipeline.paths import TRANSCRIPT_DIR as SOURCE_DIR
-    from src.pipeline.utils import safe_save_json, safe_write_text
-except Exception:
-    SOURCE_DIR = Path(os.environ.get("KCT_TRANSCRIPT_DIR", "output/transcripts"))
-    OBSIDIAN_VAULT = Path(os.environ.get("OBSIDIAN_VAULT", "output/obsidian"))
-    STATE_DIR = Path(os.environ.get("KCT_STATE_DIR", "state"))
-
-    def safe_write_text(path: Path, content: str) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(content, encoding="utf-8")
-        tmp.replace(path)
-
-    def safe_save_json(path: Path, data, origin: str | None = None) -> None:
-        safe_write_text(path, json.dumps(data, ensure_ascii=False, indent=2))
 
 # ── 설정 ──────────────────────────────────────────────────────────
 TRANSCRIPTS_DIR = OBSIDIAN_VAULT / "transcripts"
