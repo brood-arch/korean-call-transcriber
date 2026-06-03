@@ -1,0 +1,67 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "korean-call-transcriber"
+version = "0.3.1"
+description = "Korean phone call transcription pipeline with Whisper + speaker diarization, auto TODO/schedule/entity extraction"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+authors = [
+    {name = "Sinhyuk Lee"},
+]
+keywords = ["korean", "whisper", "transcription", "diarization", "todo", "obsidian"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+
+dependencies = [
+    "faster-whisper>=1.0.0",
+    "numpy>=1.24.0",
+    "psutil>=5.9.0",
+]
+
+[project.optional-dependencies]
+gpu = [
+    "whisperx>=3.1.0",
+    "torch>=2.0.0",
+]
+queue = [
+    "psycopg2-binary>=2.9.0",
+]
+calendar = [
+    "google-auth>=2.0.0",
+    "google-auth-oauthlib>=1.0.0",
+]
+chromadb = [
+    "chromadb>=0.4.0",
+]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.4.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]

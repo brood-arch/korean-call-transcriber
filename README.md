@@ -22,6 +22,30 @@ Korean phone call transcription pipeline with Whisper + speaker diarization, aut
 - **⚙️ Minions Queue** — Postgres-backed durable job queue with fan-out, DAG, and crash recovery
 - **🔍 State Validator** — Automated state file existence, staleness, and integrity checks
 
+## ⚠️ Privacy Notice
+
+This tool processes sensitive communications (calls, emails, SMS). **Transcript text is sent to the configured LLM API for extraction** — all other processing runs locally. See [PRIVACY.md](PRIVACY.md) for details and recommendations.
+
+## Module Status
+
+| Module | Status | Notes |
+|--------|--------|-------|
+| Transcription | ✅ Production | WhisperX + diarization |
+| LLM Extraction | ✅ Production | 8-category unified extraction |
+| STT Correction | ✅ Production | Hot-reload rules |
+| Obsidian Sync | ✅ Production | Counterparty indexing |
+| Gmail Classifier | ✅ Production | Keyword-based classification |
+| Email TODO Extract | ✅ Production | LLM + rule-based |
+| Naver Mail | ✅ Production | IMAP archiving |
+| Calendar | ✅ Production | Google Calendar OAuth2 |
+| TODO Store | ✅ Production | Jaccard fuzzy dedup |
+| Knowledge Graph | ✅ Production | Entity relationships |
+| Signal Detector | ✅ Production | 3-band fast scoring |
+| Minions Queue | ✅ Production | Postgres-backed |
+| State Validator | ✅ Production | Integrity checks |
+| SMS Handler | 🔧 Placeholder | Integration pattern only |
+| Retry Queue | ✅ Production | JSONL + backoff |
+
 ## Architecture
 
 ```
