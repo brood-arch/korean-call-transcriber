@@ -29,7 +29,6 @@ import imaplib
 import json
 import logging
 import re
-import sys
 from datetime import timedelta, timezone
 from email.message import Message
 from pathlib import Path
@@ -176,7 +175,7 @@ def fetch_messages(
             imap_folder = f'"{folder}"' if " " in folder else folder
             status, _ = imap.select(imap_folder)
             if status != "OK":
-                print(f"  Skipping folder {folder}: select failed", file=sys.stderr)
+                log.warning(f"Skipping folder {folder}: select failed")
                 continue
 
             # Fetch all UIDs

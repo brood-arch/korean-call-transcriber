@@ -189,7 +189,7 @@ def move_to_trash(mail: imaplib.IMAP4_SSL, email_ids: list) -> None:
             mail.copy(email_id, "[Gmail]/Bin")
             mail.store(email_id, "+FLAGS", "\\Deleted")
         except Exception as e:
-            print(f"Error moving email {email_id}: {e}")
+            log.error(f"Error moving email {email_id}: {e}")
     mail.expunge()
 
 

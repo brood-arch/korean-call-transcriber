@@ -12,7 +12,7 @@ KST = timezone(timedelta(hours=9))
 log = logging.getLogger(__name__)
 
 try:
-    from src.pipeline.paths import AUDIO_DIR, STATE_DIR, TRANSCRIPT_DIR
+    from src.config import AUDIO_DIR, STATE_DIR, TRANSCRIPT_DIR
 except Exception as exc:
     log.debug("Falling back to local health-check paths: %s", exc)
     TRANSCRIPT_DIR = Path(os.environ.get("TRANSCRIPT_DIR", "./data/transcripts"))

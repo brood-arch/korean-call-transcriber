@@ -15,6 +15,7 @@ your OAuth2 flow or Google's quickstart pattern as needed.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import urllib.error
 import urllib.request
@@ -22,6 +23,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 KST = timezone(timedelta(hours=9))
+
+log = logging.getLogger(__name__)
 
 
 def _get_token_path() -> Path:
@@ -85,10 +88,10 @@ def check_today() -> dict:
         return {"ok": True, "count": len(items)}
     except urllib.error.HTTPError as e:
         body = e.read().decode()[:300]
-        print(f"Error: {e.code} - {body}")
+        log.error(f"{e.code} - {body}")
         return {"ok": False, "error": str(e)}
     except Exception as e:
-        print(f"Error: {e}")
+        log.error(f"{e}")
         return {"ok": False, "error": str(e)}
 
 

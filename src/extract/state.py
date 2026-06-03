@@ -259,7 +259,7 @@ def track_notified(notification_state_file: Path, new_todos: list, new_appointme
         }
         save_notification_state(notification_state_file, state)
     except Exception as e:
-        print(f"    WARN: notification state tracking failed: {redact_sensitive_text(str(e))}")
+        log.warning(f"notification state tracking failed: {redact_sensitive_text(str(e))}")
 
 
 # --- Telegram notification ---
@@ -372,7 +372,7 @@ def notify_new_items(new_todos: list, new_appointments: list | None = None, acti
     ok = result.returncode == 0
     notes.append({"kind": "new_items", "ok": ok})
     if not ok:
-        print(f"    WARN: telegram notification failed: {redact_sensitive_text(getattr(result, 'stderr', '') or getattr(result, 'stdout', ''))}")
+        log.warning(f"telegram notification failed: {redact_sensitive_text(getattr(result, 'stderr', '') or getattr(result, 'stdout', ''))}")
     return notes
 
 
@@ -389,4 +389,4 @@ def print_todo_alert():
             print(f"{'='*50}")
             print(result.stdout)
     except Exception as e:
-        print(f"    WARN: todo alert failed: {redact_sensitive_text(str(e))}")
+        log.warning(f"todo alert failed: {redact_sensitive_text(str(e))}")

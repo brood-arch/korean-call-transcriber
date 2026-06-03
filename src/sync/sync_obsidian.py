@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 sync_transcripts_to_obsidian.py
 Transcript text files -> Obsidian Vault sync
@@ -397,7 +397,7 @@ def main():
     if new_counterparties:
         print(f"🏢 거래처: {len(new_counterparties)}개 (신규 가능성)")
     if errors:
-        print(f"❌ 오류: {len(errors)}개")
+        log.error(f"❌ 오류: {len(errors)}개")
         for e in errors[:10]:
             print(f"   {e}")
     if args.dry_run:

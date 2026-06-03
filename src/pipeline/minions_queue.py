@@ -27,6 +27,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shlex
 import subprocess
@@ -34,6 +35,8 @@ import sys
 import time
 from datetime import timedelta, timezone
 from typing import Optional
+
+log = logging.getLogger(__name__)
 
 try:
     import psycopg2
@@ -481,11 +484,15 @@ class MinionsQueue:
     # ── Shell Job Executor ──────────────────────────────
 
     def execute_shell(self, job: dict) -> dict:
-        """Execute a shell job.
+        """Execute a shell/subprocess job.
 
-        Payload format:
+        Preferred payload format (v0.7+):
+            {"argv": ["python", "-m", "src.extract.extract_all", "--today"],
+             "cwd": "/path/to/workspace",
+             "env": {"KCT_WORKSPACE": "/path/to/workspace"}}
+
+        Legacy format (deprecated, removal in v0.8):
             {"cmd": "python script.py", "cwd": "/path", "env": {...}}
-            or {"argv": ["python", "script.py"], "cwd": "..."}
         """
         payload = job["payload"]
         if isinstance(payload, str):
@@ -494,19 +501,30 @@ class MinionsQueue:
         cmd = payload.get("cmd")
         argv = payload.get("argv")
         cwd = payload.get("cwd", os.getcwd())
-        env = payload.get("env", {})
+        env_overrides = payload.get("env", {})
         timeout = job.get("timeout_ms", 300000) / 1000
 
-        run_env = {**os.environ, **env}
+        # Redact any sensitive values in env overrides before logging
+        safe_env_preview = {k: redact_sensitive_text(str(v)) for k, v in env_overrides.items()}
+        log.debug("Shell job: argv=%s cmd=%s cwd=%s env=%s", argv, cmd, cwd, safe_env_preview)
+
+        run_env = {**os.environ, **env_overrides}
 
         try:
-            if cmd:
+            # Prefer argv (structured, safe) over cmd (string, risky)
+            if argv:
+                proc = subprocess.run(
+                    argv, cwd=cwd, env=run_env,
+                    capture_output=True, text=True, timeout=timeout,
+                )
+            elif cmd:
                 if not _shell_jobs_enabled():
                     return {
                         "exit_code": 2,
-                        "error": "Shell command payloads are disabled by default. Set KCT_ENABLE_SHELL_JOBS=1 for trusted local automation.",
+                        "error": "Shell command payloads are disabled by default. "
+                                 "Set KCT_ENABLE_SHELL_JOBS=1 for trusted local automation.",
                     }
-                # Prefer argv split over shell=True to reduce injection risk.
+                log.warning("Legacy 'cmd' payload used; switch to 'argv' format. cmd=%s", cmd[:100])
                 try:
                     parsed_argv = shlex.split(cmd, posix=(os.name != "nt"))
                 except ValueError as exc:
@@ -515,13 +533,8 @@ class MinionsQueue:
                     parsed_argv, cwd=cwd, env=run_env,
                     capture_output=True, text=True, timeout=timeout,
                 )
-            elif argv:
-                proc = subprocess.run(
-                    argv, cwd=cwd, env=run_env,
-                    capture_output=True, text=True, timeout=timeout,
-                )
             else:
-                return {"exit_code": 1, "error": "No cmd or argv in payload"}
+                return {"exit_code": 1, "error": "No argv or cmd in payload"}
 
             return {
                 "exit_code": proc.returncode,
@@ -657,10 +670,10 @@ class MinionsQueue:
                     result = self.execute_shell(job)
                     if result.get("exit_code", -1) == 0:
                         self.complete(job_id, result)
-                        print(f"[{job_id}] Completed")
+                        log.info(f"[{job_id}] Completed")
                     else:
                         status = self.fail(job_id, result.get("error", "Unknown"))
-                        print(f"[{job_id}] {'Will retry' if status == 'pending' else 'Failed permanently'}")
+                        log.error(f"[{job_id}] {'Will retry' if status == 'pending' else 'Failed permanently'}")
 
                 elif job_name in ("aggregator", "subagent_aggregator"):
                     parent_id = job.get("parent_id")
@@ -697,10 +710,10 @@ class MinionsQueue:
                     result = self.execute_shell(job)
                     if result.get("exit_code", -1) == 0:
                         self.complete(job_id, result)
-                        print(f"[{job_id}] Completed")
+                        log.info(f"[{job_id}] Completed")
                     else:
                         status = self.fail(job_id, result.get("error", "Unknown"))
-                        print(f"[{job_id}] {'Will retry' if status == 'pending' else 'Failed permanently'}")
+                        log.error(f"[{job_id}] {'Will retry' if status == 'pending' else 'Failed permanently'}")
 
                 # Check parent after child completion
                 parent_id = job.get("parent_id")
@@ -752,7 +765,7 @@ class MinionsQueue:
 def main() -> None:
     """Command-line interface for the job queue."""
     if psycopg2 is None:
-        print("Error: psycopg2 is required. Install with: pip install psycopg2-binary")
+        log.error("psycopg2 is required. Install with: pip install psycopg2-binary")
         sys.exit(1)
 
     mq = MinionsQueue()

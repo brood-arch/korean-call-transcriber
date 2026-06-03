@@ -45,6 +45,8 @@ from .state import (
     track_notified,
 )
 
+log = logging.getLogger(__name__)
+
 WORKSPACE = Path(__file__).resolve().parents[2]
 
 # Lazy import for fast_score_transcript (avoids circular / heavy init at module load)
@@ -54,6 +56,7 @@ def _get_fast_score():
     if _fast_score_fn is None:
         try:
             from src.knowledge.signal_detector import fast_score_transcript
+
             _fast_score_fn = fast_score_transcript
         except ImportError:
             def default_fast_score(text):
@@ -126,7 +129,7 @@ class IntegratedPipeline:
     def run(self):
         api_key = get_llm_config()["api_key"]
         if not api_key:
-            print("ERROR: LLM_API_KEY environment variable not set.")
+            log.error("LLM_API_KEY environment variable not set.")
             sys.exit(EXIT_CONFIG)
 
         files = self.get_transcription_files()
@@ -251,7 +254,7 @@ class IntegratedPipeline:
                         batch_results.append(file_result)
 
                     except Exception as e:
-                        print(f"    ERROR {stem}: {e}")
+                        log.error(f"{stem}: {e}")
                         batch_errors.append({"file": stem, "error": str(e)})
                         self.stats["errors"] += 1
 
@@ -320,9 +323,9 @@ class IntegratedPipeline:
         print(f"Money:        {self.stats['money']}")
         print(f"Risks:        {self.stats['risks']}")
         print(f"Corrections:  {self.stats['corrections']}")
-        print(f"Errors:       {self.stats['errors']}")
+        log.info(f"Errors:       {self.stats['errors']}")
         print(f"Dropped:      {self.stats.get('fast_score_dropped', 0)} (fast_score pre-filter)")
-        print(f"Fallbacks:    {self.stats.get('fallbacks', 0)} (LLM failed, heuristic)")
+        log.info(f"Fallbacks:    {self.stats.get('fallbacks', 0)} (LLM failed, heuristic)")
         print(f"New TODOs:    {self.stats.get('new_todos', 0)} (synced to persistent_todos.json)")
         if self._last_notifications:
             print(f"Notifications:{len(self._last_notifications)} attempted")
@@ -349,7 +352,7 @@ def dry_run(args):
     print("=" * 60)
 
     if not base_dir.exists():
-        print(f"FAIL: Base directory not found: {base_dir}")
+        log.error(f"Base directory not found: {base_dir}")
         return False
     print(f"OK: Base directory: {base_dir}")
 
@@ -367,11 +370,12 @@ def dry_run(args):
     try:
         config = get_llm_config()
         key = config["api_key"]
-        print(f"{'OK' if key else 'FAIL'}: LLM_API_KEY {'set' if key else 'NOT set'}")
+        if not key:
+            log.error("LLM_API_KEY NOT set")
         print(f"OK: LLM model: {config['model']}")
         print(f"OK: LLM base URL: {config['base_url']}")
     except Exception as e:
-        print(f"WARN: Could not check API key: {e}")
+        log.warning(f"Could not check API key: {e}")
 
     completed = len(list(state_dir.glob("batch_*.json")))
     print(f"INFO: {completed} batches already completed")

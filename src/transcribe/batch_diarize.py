@@ -9,12 +9,15 @@ Usage:
 """
 import argparse
 import json
+import logging
 import os
 import subprocess
 import sys
 from pathlib import Path
 
 from src.pipeline.paths import is_wsl
+
+log = logging.getLogger(__name__)
 
 WORKSPACE = Path(__file__).resolve().parent.parent
 WIN_PYTHON = r".\tools\whisperx-venv\Scripts\python.exe"

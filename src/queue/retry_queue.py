@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -37,6 +38,8 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 KST = timezone(timedelta(hours=9))
+
+log = logging.getLogger(__name__)
 
 try:
     from src.pipeline.paths import LOG_DIR, STATE_DIR, WORKSPACE, is_wsl
@@ -458,7 +461,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.print_json:
             print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
         else:
-            print(f"dry_run={result['dry_run']} selected={result['selected']} succeeded={result['succeeded']} failed={result['failed']} backup={result['backup']}")
+            log.info(f"dry_run={result['dry_run']} selected={result['selected']} succeeded={result['succeeded']} failed={result['failed']} backup={result['backup']}")
             for command in result["commands"]:
                 print(f"- {command['queue_id']} {command['next_action']}: {' '.join(command['argv'])}")
         return 1 if result.get("failed") else 0

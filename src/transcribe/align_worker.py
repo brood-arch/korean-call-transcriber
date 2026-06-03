@@ -11,6 +11,7 @@ This script ONLY imports whisperx (no faster_whisper/ctranslate2).
 import argparse
 import gc
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -20,6 +21,8 @@ from pathlib import Path
 os.environ["PATH"] = str(Path(sys.executable).parent) + os.pathsep + os.environ.get("PATH", "")
 os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 import warnings
+
+log = logging.getLogger(__name__)
 
 warnings.filterwarnings("ignore")
 
@@ -38,7 +41,7 @@ def log(msg: str) -> None:
         with open(LOG, "a", encoding="utf-8") as f:
             f.write(line + "\n")
     except Exception as exc:
-        print(f"{ts} WARN log write failed: {exc}", file=sys.stderr, flush=True)
+        log.warning(f"{ts} log write failed: {exc}")
     print(line, flush=True)
 
 

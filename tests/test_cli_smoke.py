@@ -41,5 +41,6 @@ def test_pyproject_exposes_console_scripts():
     assert tuple(int(x) for x in version.split(".")) >= (0, 4, 0), f"version {version} < 0.4.0"
     assert scripts["kct-transcribe"] == "src.transcribe.batch_transcribe:main"
     assert scripts["kct-extract"] == "src.extract.extract_all:main"
-    assert scripts["kct-health"] == "src.queue.gap_analyzer:main"
+    assert scripts["kct-health"] == "src.pipeline.health_check:main"
+    assert scripts["kct-gap"] == "src.queue.gap_analyzer:main"
     assert scripts["kct-sync-obsidian"] == "src.sync.sync_obsidian:main"

@@ -397,7 +397,7 @@ def main(argv: list[str] | None = None) -> int:
             transcribe_log=args.transcribe_log,
         )
     except AnalyzerError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        log.error(f"{exc}")
         return 2
 
     if args.output_json:
