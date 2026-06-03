@@ -38,6 +38,7 @@
 git clone https://github.com/brood-arch/korean-call-transcriber.git
 cd korean-call-transcriber
 pip install -r requirements.txt
+pip install -e .
 
 # 환경 설정 파일 복사 후 편집
 cp .env.example .env
@@ -57,6 +58,9 @@ python -m src.transcribe.batch_transcribe --file path/to/audio.m4a
 
 # 최신 파일부터 처리
 python -m src.transcribe.batch_transcribe --recent-first --limit 10
+
+# 설치형 CLI
+kct-transcribe --recent-first --limit 10
 ```
 
 #### 2. 구조화된 데이터 추출
@@ -70,6 +74,9 @@ python -m src.extract.extract_all --dry-run
 
 # 오늘 파일만 처리
 python -m src.extract.extract_all --today
+
+# 설치형 CLI
+kct-extract --today
 ```
 
 #### 3. 파이프라인 건전성 분석
@@ -80,6 +87,9 @@ python -m src.queue.gap_analyzer
 
 # 상세 리포트 생성
 python -m src.queue.gap_analyzer --output-json report.json --output-md report.md
+
+# 파이프라인 상태 확인 단축 명령
+kct-health
 ```
 
 #### 4. Obsidian 동기화
@@ -93,15 +103,19 @@ python -m src.sync.sync_obsidian --dry-run
 
 # 전체 파일 재동기화
 python -m src.sync.sync_obsidian --all
+
+# 설치형 CLI
+kct-sync-obsidian --all
 ```
 
 ### 환경 변수
 
 | 변수 | 설명 | 기본값 |
 |---|---|---|
-| `LLM_API_KEY` | LLM API 키 | (필수) |
-| `LLM_BASE_URL` | OpenAI 호환 API 베이스 URL | `https://api.example.com/v1` |
-| `LLM_MODEL` | 모델명 | `example-model` |
+| `LLM_API_KEY` | LLM API 키 (`ZAI_API_KEY`도 이전 호환용으로 지원) | (필수) |
+| `LLM_BASE_URL` | OpenAI 호환 API 베이스 URL (`ZAI_BASE_URL`도 지원) | `https://api.z.ai/api/coding/paas/v4` |
+| `LLM_MODEL` | 모델명 | `glm-5.1` |
+| `LLM_DISABLE_THINKING` | GLM thinking trace 비활성화 (`auto`, `true`, `false`) | `auto` |
 | `AUDIO_DIR` | 오디오 소스 디렉터리 | `data/audio` |
 | `TRANSCRIPT_DIR` | 전사 결과 출력 디렉터리 | `output/transcripts` |
 | `WHISPER_MODEL` | faster-whisper 모델 | `mobiuslabsgmbh/faster-whisper-large-v3-turbo` |

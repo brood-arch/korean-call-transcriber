@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "korean-call-transcriber"
-version = "0.3.2"
+version = "0.3.3"
 description = "Korean phone call transcription pipeline with Whisper + speaker diarization, auto TODO/schedule/entity extraction"
 readme = "README.md"
 license = {text = "MIT"}
@@ -29,6 +29,12 @@ dependencies = [
     "numpy>=1.24.0",
     "psutil>=5.9.0",
 ]
+
+[project.scripts]
+kct-transcribe = "src.transcribe.batch_transcribe:main"
+kct-extract = "src.extract.extract_all:main"
+kct-health = "src.queue.gap_analyzer:main"
+kct-sync-obsidian = "src.sync.sync_obsidian:main"
 
 [project.optional-dependencies]
 gpu = [

@@ -16,9 +16,26 @@ MAX_RETRIES = 4            # increased from 3 for better resilience
 RETRY_BACKOFF = [5, 15, 45, 90]  # seconds — exponential for 429
 
 
-def call_zai_extract(api_key: str, content: str, run_id: str = "",
+def get_llm_config(api_key: str = "") -> dict[str, str]:
+    """Resolve OpenAI-compatible LLM settings.
+
+    LLM_* variables are preferred for public use. ZAI_* variables are accepted
+    for backward compatibility with the original deployment.
+    """
+    return {
+        "api_key": api_key or os.environ.get("LLM_API_KEY") or os.environ.get("ZAI_API_KEY", ""),
+        "base_url": (
+            os.environ.get("LLM_BASE_URL")
+            or os.environ.get("ZAI_BASE_URL")
+            or "https://api.z.ai/api/coding/paas/v4"
+        ).rstrip("/"),
+        "model": os.environ.get("LLM_MODEL", "glm-5.1"),
+    }
+
+
+def call_llm_extract(api_key: str, content: str, run_id: str = "",
                      lf_available: bool = False) -> dict | None:
-    """Call GLM via ZAI (OpenAI-compatible) with unified extraction prompt.
+    """Call an OpenAI-compatible LLM with unified extraction prompt.
 
     Returns dict with keys: summary, todos, appointments, entities, products, money, risks, corrections
     Returns None on failure.
@@ -30,23 +47,25 @@ def call_zai_extract(api_key: str, content: str, run_id: str = "",
 
     prompt_template = get_prompt()
     prompt = prompt_template.replace("{content}", content[:MAX_CONTENT_CHARS], 1)
+    config = get_llm_config(api_key)
 
-    payload = json.dumps({
-        "model": "glm-5.1",
+    payload_obj = {
+        "model": config["model"],
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": 8192,
         "temperature": 0.1,
         "response_format": {"type": "json_object"},
-        # GLM-5.1 defaults to long reasoning_content on the coding endpoint.
-        # For deterministic JSON extraction we need fast final content, not thinking traces.
-        "thinking": {"type": "disabled"},
-    }).encode("utf-8")
+    }
+    disable_thinking = os.environ.get("LLM_DISABLE_THINKING", "auto").lower()
+    if disable_thinking in {"1", "true", "yes"} or (
+        disable_thinking == "auto" and config["model"].lower().startswith("glm")
+    ):
+        # GLM coding endpoints may emit long reasoning traces by default.
+        payload_obj["thinking"] = {"type": "disabled"}
+    payload = json.dumps(payload_obj).encode("utf-8")
 
-    # IMPORTANT: use ZAI coding endpoint. The non-coding /api/paas endpoint returns
-    # 429 "Insufficient balance or no resource package" for this account, causing
-    # TODO extraction to fail silently after retries.
-    api_url = os.environ.get("ZAI_BASE_URL", "https://api.z.ai/api/coding/paas/v4").rstrip("/") + "/chat/completions"
-    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
+    api_url = config["base_url"] + "/chat/completions"
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {config['api_key']}"}
 
     # Langfuse span
     _gen = None
@@ -57,7 +76,7 @@ def call_zai_extract(api_key: str, content: str, run_id: str = "",
             _gen = _tracer.start_as_current_observation(
                 as_type="generation",
                 name="unified-extraction-llm",
-                model="zai/glm-5.1",
+                model=config["model"],
                 input=prompt[:300],
                 metadata={"run_id": run_id or ""},
             )
@@ -140,3 +159,6 @@ def call_zai_extract(api_key: str, content: str, run_id: str = "",
             pass
 
     return None
+
+
+call_zai_extract = call_llm_extract

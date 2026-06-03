@@ -2,6 +2,8 @@
 
 import subprocess
 import sys
+import tomllib
+from pathlib import Path
 
 
 def run_help(module: str) -> subprocess.CompletedProcess:
@@ -29,3 +31,13 @@ def test_email_todo_extract_help_runs():
     result = run_help("src.integrations.email_todo_extract")
     assert result.returncode == 0, result.stderr
     assert "Email TODO extraction" in result.stdout
+
+
+def test_pyproject_exposes_console_scripts():
+    data = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    scripts = data["project"]["scripts"]
+    assert data["project"]["version"] == "0.3.3"
+    assert scripts["kct-transcribe"] == "src.transcribe.batch_transcribe:main"
+    assert scripts["kct-extract"] == "src.extract.extract_all:main"
+    assert scripts["kct-health"] == "src.queue.gap_analyzer:main"
+    assert scripts["kct-sync-obsidian"] == "src.sync.sync_obsidian:main"

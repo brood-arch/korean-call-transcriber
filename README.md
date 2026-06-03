@@ -30,21 +30,21 @@ This tool processes sensitive communications (calls, emails, SMS). **Transcript 
 
 | Module | Status | Notes |
 |--------|--------|-------|
-| Transcription | ✅ Production | WhisperX + diarization |
-| LLM Extraction | ✅ Production | 8-category unified extraction |
-| STT Correction | ✅ Production | Hot-reload rules |
-| Obsidian Sync | ✅ Production | Counterparty indexing |
-| Gmail Classifier | ✅ Production | Keyword-based classification |
-| Email TODO Extract | ✅ Production | LLM + rule-based |
-| Naver Mail | ✅ Production | IMAP archiving |
-| Calendar | ✅ Production | Google Calendar OAuth2 |
-| TODO Store | ✅ Production | Jaccard fuzzy dedup |
-| Knowledge Graph | ✅ Production | Entity relationships |
-| Signal Detector | ✅ Production | 3-band fast scoring |
-| Minions Queue | ✅ Production | Postgres-backed |
-| State Validator | ✅ Production | Integrity checks |
-| SMS Handler | 🔧 Placeholder | Integration pattern only |
-| Retry Queue | ✅ Production | JSONL + backoff |
+| Transcription | Beta | WhisperX + diarization; GPU setup required |
+| LLM Extraction | Beta | 8-category unified extraction; OpenAI-compatible API |
+| STT Correction | Stable | Hot-reload rules |
+| Obsidian Sync | Beta | Counterparty indexing; local vault paths required |
+| Gmail Classifier | Experimental | Keyword-based classification; credentials required |
+| Email TODO Extract | Experimental | LLM + rule-based; credentials required |
+| Naver Mail | Experimental | IMAP archiving; Naver IMAP setup required |
+| Calendar | Experimental | Google Calendar OAuth2 setup required |
+| TODO Store | Stable | Jaccard fuzzy dedup |
+| Knowledge Graph | Beta | Entity relationships |
+| Signal Detector | Stable | 3-band fast scoring |
+| Minions Queue | Beta | Postgres-backed; optional |
+| State Validator | Stable | Integrity checks |
+| SMS Handler | Placeholder | Integration pattern only |
+| Retry Queue | Stable | JSONL + backoff |
 
 ## Architecture
 
@@ -113,6 +113,7 @@ See [docs/architecture.md](docs/architecture.md) for detailed documentation.
 git clone https://github.com/brood-arch/korean-call-transcriber.git
 cd korean-call-transcriber
 pip install -r requirements.txt
+pip install -e .
 
 # Copy and edit environment config
 cp .env.example .env
@@ -132,6 +133,9 @@ python -m src.transcribe.batch_transcribe --file path/to/audio.m4a
 
 # Process newest files first
 python -m src.transcribe.batch_transcribe --recent-first --limit 10
+
+# Equivalent installed CLI
+kct-transcribe --recent-first --limit 10
 ```
 
 #### 2. Extract structured data
@@ -145,6 +149,9 @@ python -m src.extract.extract_all --dry-run
 
 # Process only today's files
 python -m src.extract.extract_all --today
+
+# Equivalent installed CLI
+kct-extract --today
 ```
 
 #### 3. Analyze pipeline health
@@ -155,6 +162,9 @@ python -m src.queue.gap_analyzer
 
 # Generate detailed report
 python -m src.queue.gap_analyzer --output-json report.json --output-md report.md
+
+# Pipeline health shortcut
+kct-health
 ```
 
 #### 4. Sync to Obsidian
@@ -168,6 +178,9 @@ python -m src.sync.sync_obsidian --dry-run
 
 # Re-sync all files
 python -m src.sync.sync_obsidian --all
+
+# Equivalent installed CLI
+kct-sync-obsidian --all
 ```
 
 #### 5. Gmail auto-classification
@@ -267,9 +280,10 @@ python -m src.pipeline.validate_state --quiet
 
 | Variable | Description | Default |
 |---|---|---|
-| `LLM_API_KEY` | LLM API key | (required) |
-| `LLM_BASE_URL` | OpenAI-compatible API base URL | `https://api.example.com/v1` |
-| `LLM_MODEL` | Model name | `example-model` |
+| `LLM_API_KEY` | LLM API key (`ZAI_API_KEY` is also supported for backward compatibility) | (required) |
+| `LLM_BASE_URL` | OpenAI-compatible API base URL (`ZAI_BASE_URL` is also supported) | `https://api.z.ai/api/coding/paas/v4` |
+| `LLM_MODEL` | Model name | `glm-5.1` |
+| `LLM_DISABLE_THINKING` | Disable GLM thinking traces (`auto`, `true`, `false`) | `auto` |
 | `AUDIO_DIR` | Audio source directory | `data/audio` |
 | `TRANSCRIPT_DIR` | Transcript output directory | `output/transcripts` |
 | `WHISPER_MODEL` | faster-whisper model | `mobiuslabsgmbh/faster-whisper-large-v3-turbo` |
@@ -381,6 +395,13 @@ The Postgres-backed job queue provides crash recovery, idempotent submission, fa
 This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
 
 ## Changelog
+
+### v0.3.3
+- Added console entry points: `kct-transcribe`, `kct-extract`, `kct-health`, `kct-sync-obsidian`
+- Generalized unified extraction client to prefer `LLM_API_KEY`, `LLM_BASE_URL`, and `LLM_MODEL`
+- Made retry queue command tests robust across native Windows and WSL command shapes
+- Switched CI linting to raw `ruff check .`
+- Replaced over-broad module status labels with Stable/Beta/Experimental/Placeholder
 
 ### v0.3.0
 - Added `src/integrations/` — Gmail classifier, email TODO extraction, calendar integration, SMS handler, Naver Mail archiver

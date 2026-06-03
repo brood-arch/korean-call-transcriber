@@ -11,7 +11,7 @@ Usage:
 
 
 Config:
-    Uses ZAI_API_KEY environment variable for API authentication.
+    Uses LLM_API_KEY (or legacy ZAI_API_KEY) for API authentication.
     State: memory/state/integrated_extraction/
 """
 
@@ -26,7 +26,7 @@ from pathlib import Path
 
 from src.pipeline.utils import compress_transcript, fallback_summary
 
-from .client import call_zai_extract
+from .client import call_llm_extract, get_llm_config
 from .prompt import setup_langfuse
 from .state import (
     collect_new_appointments,
@@ -130,9 +130,9 @@ class IntegratedPipeline:
         return new_files
 
     def run(self):
-        api_key = os.environ.get("ZAI_API_KEY", "")
+        api_key = get_llm_config()["api_key"]
         if not api_key:
-            print("ERROR: ZAI_API_KEY environment variable not set.")
+            print("ERROR: LLM_API_KEY environment variable not set.")
             sys.exit(1)
 
         files = self.get_transcription_files()
@@ -209,7 +209,7 @@ class IntegratedPipeline:
                         # ── Phase 2: compress (OpenHuman TokenJuice adapted) ──
                         content = compress_transcript(content, budget=MAX_CONTENT_CHARS)
 
-                        result = call_zai_extract(api_key, content, run_id=self.run_id, lf_available=self._lf_available)
+                        result = call_llm_extract(api_key, content, run_id=self.run_id, lf_available=self._lf_available)
 
                         # ── Phase 3: fallback if LLM failed (OpenHuman fallback_summary) ──
                         if not result or result.get("parse_error"):
@@ -369,8 +369,11 @@ def dry_run(args):
 
     # Check API key
     try:
-        key = os.environ.get("ZAI_API_KEY", "")
-        print(f"{'OK' if key else 'FAIL'}: ZAI_API_KEY {'set' if key else 'NOT set'}")
+        config = get_llm_config()
+        key = config["api_key"]
+        print(f"{'OK' if key else 'FAIL'}: LLM_API_KEY {'set' if key else 'NOT set'}")
+        print(f"OK: LLM model: {config['model']}")
+        print(f"OK: LLM base URL: {config['base_url']}")
     except Exception as e:
         print(f"WARN: Could not check API key: {e}")
 

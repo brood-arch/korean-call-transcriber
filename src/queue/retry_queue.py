@@ -246,7 +246,7 @@ def _wsl_to_win_path(wsl_path: str) -> str:
     return wsl_path
 
 
-def command_for_entry(entry: dict[str, Any], workspace: Path) -> list[str]:
+def command_for_entry(entry: dict[str, Any], workspace: Path, running_on_wsl: bool | None = None) -> list[str]:
     action = str(entry.get("next_action"))
     source_path = entry.get("source_path")
 
@@ -256,8 +256,12 @@ def command_for_entry(entry: dict[str, Any], workspace: Path) -> list[str]:
     # Convert WSL paths to Windows paths so cmd.exe / Windows Python can handle them
     win_source_path = _wsl_to_win_path(str(source_path)) if source_path else ""
 
-    # Detect whether we are running under WSL or native Windows
-    running_on_wsl = os.path.exists("/proc/version") and "microsoft" in open("/proc/version", errors="ignore").read().lower()
+    # Detect whether we are running under WSL or native Windows.
+    if running_on_wsl is None:
+        running_on_wsl = (
+            os.path.exists("/proc/version")
+            and "microsoft" in open("/proc/version", errors="ignore").read().lower()
+        )
 
     if action == "transcribe":
         if not source_path:

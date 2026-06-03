@@ -28,7 +28,7 @@ jobs:
           pip install -r requirements.txt || true
 
       - name: Lint with ruff
-        run: ruff check src/ tests/ --ignore E501,E402
+        run: ruff check .
 
       - name: Compile check
         run: python -m compileall -q src tests

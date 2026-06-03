@@ -100,10 +100,26 @@ def test_dry_run_worker_reports_commands_without_mutating_queue_or_backing_up(tm
 
     assert result["dry_run"] is True
     assert result["selected"] == 3
-    assert result["commands"][0]["argv"][2] == "src.transcribe.batch_transcribe"
-    assert "--file" in result["commands"][0]["argv"]
+    argv_text = " ".join(result["commands"][0]["argv"])
+    assert "src.transcribe.batch_transcribe" in argv_text
+    assert "--file" in argv_text
     assert queue_path.read_text(encoding="utf-8") == before
     assert not list((tmp_path / "backup").glob("**/*transcription_retry_queue*"))
+
+
+def test_command_for_entry_supports_native_and_wsl_shapes(tmp_path):
+    from src.queue import retry_queue as q
+
+    entry = q.build_queue_from_report(_report(tmp_path), now="2026-05-12T10:00:00+09:00")[0]
+
+    native = q.command_for_entry(entry, tmp_path, running_on_wsl=False)
+    assert native[1:4] == ["-m", "src.transcribe.batch_transcribe", "--file"]
+
+    wsl = q.command_for_entry(entry, tmp_path, running_on_wsl=True)
+    wsl_text = " ".join(wsl)
+    assert wsl[:2] == ["/mnt/c/Windows/System32/cmd.exe", "/c"]
+    assert "src.transcribe.batch_transcribe" in wsl_text
+    assert "--file" in wsl_text
 
 
 def test_worker_records_failure_attempt_backoff_log_and_backup(tmp_path):
