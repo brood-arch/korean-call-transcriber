@@ -5,6 +5,9 @@ and per-category field validation with type coercion.
 """
 
 import json
+import logging
+
+log = logging.getLogger(__name__)
 
 
 def parse_unified_response(text: str) -> dict:
@@ -28,8 +31,8 @@ def parse_unified_response(text: str) -> dict:
             try:
                 data = json.loads(cleaned[start:end])
                 return _build_result(data)
-            except json.JSONDecodeError:
-                pass
+            except json.JSONDecodeError as exc:
+                log.debug("Failed to parse extracted JSON object: %s", exc)
         return {
             "summary": {}, "todos": [], "appointments": [], "entities": [],
             "products": [], "money": [], "risks": [], "corrections": [],

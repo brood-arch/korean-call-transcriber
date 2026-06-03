@@ -9,6 +9,7 @@ Supports two correction types:
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 from datetime import datetime, timedelta, timezone
@@ -17,9 +18,12 @@ from typing import Any
 
 from src.pipeline.utils import safe_read_json, safe_write_json
 
+log = logging.getLogger(__name__)
+
 try:
     from src.pipeline.paths import STATE_DIR, WORKSPACE
-except Exception:
+except Exception as exc:
+    log.debug("Falling back to local correction state paths: %s", exc)
     WORKSPACE = Path.cwd()
     STATE_DIR = Path("state")
 
@@ -58,8 +62,8 @@ def load_rules() -> dict[str, Any]:
             current_mtime = RULES_PATH.stat().st_mtime
             if current_mtime <= _rules_mtime:
                 return _rules_cache
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("Failed to stat correction rules %s: %s", RULES_PATH, exc)
 
     # Reload from disk
     if not RULES_PATH.exists():
@@ -67,7 +71,8 @@ def load_rules() -> dict[str, Any]:
 
     try:
         data = safe_read_json(RULES_PATH, default=DEFAULT_RULES.copy())
-    except Exception:
+    except Exception as exc:
+        log.debug("Failed to load correction rules %s: %s", RULES_PATH, exc)
         data = DEFAULT_RULES.copy()
 
     if not isinstance(data, dict):
@@ -78,7 +83,8 @@ def load_rules() -> dict[str, Any]:
     _rules_cache = data
     try:
         _rules_mtime = RULES_PATH.stat().st_mtime
-    except Exception:
+    except Exception as exc:
+        log.debug("Failed to stat correction rules after load %s: %s", RULES_PATH, exc)
         _rules_mtime = 0.0
 
     return data

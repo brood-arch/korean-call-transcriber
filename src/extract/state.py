@@ -6,12 +6,14 @@ and persistent TODO synchronization.
 
 import hashlib
 import json
+import logging
 import os
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from src.pipeline.redact import redact_sensitive_text
 from src.pipeline.utils import (
     normalize_source,
     normalize_title,
@@ -24,6 +26,7 @@ from src.todo.persistent_store import merge_todos, todo_key
 WORKSPACE = Path(__file__).resolve().parents[2]
 
 KST = timezone(timedelta(hours=9))
+log = logging.getLogger(__name__)
 
 
 def compute_file_hash(path: Path) -> str:
@@ -43,8 +46,8 @@ def load_processed_index(processed_index_file: Path) -> dict:
     if processed_index_file.exists():
         try:
             return json.loads(processed_index_file.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("Failed to load processed index %s: %s", processed_index_file, redact_sensitive_text(repr(exc)))
     return {}
 
 
@@ -71,8 +74,8 @@ def load_checkpoint(checkpoint_file: Path, today_only: bool = False) -> int:
                     print(f"Checkpoint stale (from {cp.get('last_updated', '')}), resetting for today")
                     return 0
             return cp.get("last_completed_batch", -1) + 1
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("Failed to load checkpoint %s: %s", checkpoint_file, redact_sensitive_text(repr(exc)))
     return 0
 
 
@@ -110,7 +113,7 @@ def save_batch_result(state_dir: Path, batch_idx: int, batch_files: list, result
         from safe_io import safe_write_json
         safe_write_json(batch_file, output, origin="integrated_pipeline")
     except ImportError:
-        batch_file.write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
+        safe_save_json(batch_file, output, origin="integrated_pipeline")
 
 
 # --- Persistent TODO sync ---
@@ -191,7 +194,8 @@ def load_notification_state(notification_state_file: Path) -> dict:
     if notification_state_file.exists():
         try:
             state = json.loads(notification_state_file.read_text(encoding="utf-8"))
-        except Exception:
+        except Exception as exc:
+            log.debug("Failed to load notification state %s: %s", notification_state_file, redact_sensitive_text(repr(exc)))
             state = {}
     state.setdefault("notified_todos", {})
     state.setdefault("notified_appointments", {})
@@ -202,10 +206,7 @@ def load_notification_state(notification_state_file: Path) -> dict:
 
 def save_notification_state(notification_state_file: Path, state: dict):
     """Save notification state atomically."""
-    notification_state_file.parent.mkdir(parents=True, exist_ok=True)
-    tmp = notification_state_file.with_suffix(".tmp")
-    tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(notification_state_file)
+    safe_save_json(notification_state_file, state, origin="integrated_pipeline")
 
 
 def collect_new_appointments(batch_results: list[dict], notification_state: dict) -> list:
@@ -258,7 +259,7 @@ def track_notified(notification_state_file: Path, new_todos: list, new_appointme
         }
         save_notification_state(notification_state_file, state)
     except Exception as e:
-        print(f"    WARN: notification state tracking failed: {e}")
+        print(f"    WARN: notification state tracking failed: {redact_sensitive_text(str(e))}")
 
 
 # --- Telegram notification ---
@@ -285,7 +286,7 @@ def send_telegram(text: str):
         class _Result:
             returncode = 1
             stdout = ""
-            stderr = str(e)
+            stderr = redact_sensitive_text(str(e))
         return _Result()
 
 
@@ -303,7 +304,8 @@ def notify_new_items(new_todos: list, new_appointments: list | None = None, acti
         try:
             dt = datetime.fromisoformat(str(d))
             return f"{dt.month}/{dt.day} {dt.hour:02d}:{dt.minute:02d}"
-        except Exception:
+        except Exception as exc:
+            log.debug("Failed to parse notification date %r: %s", d, redact_sensitive_text(repr(exc)))
             return str(d)[:16]
 
     new_appointments = new_appointments or []
@@ -370,7 +372,7 @@ def notify_new_items(new_todos: list, new_appointments: list | None = None, acti
     ok = result.returncode == 0
     notes.append({"kind": "new_items", "ok": ok})
     if not ok:
-        print(f"    WARN: telegram notification failed: {getattr(result, 'stderr', '') or getattr(result, 'stdout', '')}")
+        print(f"    WARN: telegram notification failed: {redact_sensitive_text(getattr(result, 'stderr', '') or getattr(result, 'stdout', ''))}")
     return notes
 
 
@@ -387,4 +389,4 @@ def print_todo_alert():
             print(f"{'='*50}")
             print(result.stdout)
     except Exception as e:
-        print(f"    WARN: todo alert failed: {e}")
+        print(f"    WARN: todo alert failed: {redact_sensitive_text(str(e))}")

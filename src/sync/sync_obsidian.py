@@ -13,6 +13,7 @@ vault folder, with an optional contact index.
 
 import argparse
 import json
+import logging
 import os
 import re
 import sys
@@ -20,13 +21,25 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
+log = logging.getLogger(__name__)
+
 try:
     from src.pipeline.paths import OBSIDIAN_VAULT, STATE_DIR
     from src.pipeline.paths import TRANSCRIPT_DIR as SOURCE_DIR
+    from src.pipeline.utils import safe_save_json, safe_write_text
 except Exception:
     SOURCE_DIR = Path(os.environ.get("KCT_TRANSCRIPT_DIR", "output/transcripts"))
     OBSIDIAN_VAULT = Path(os.environ.get("OBSIDIAN_VAULT", "output/obsidian"))
     STATE_DIR = Path(os.environ.get("KCT_STATE_DIR", "state"))
+
+    def safe_write_text(path: Path, content: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(content, encoding="utf-8")
+        tmp.replace(path)
+
+    def safe_save_json(path: Path, data, origin: str | None = None) -> None:
+        safe_write_text(path, json.dumps(data, ensure_ascii=False, indent=2))
 
 # ── 설정 ──────────────────────────────────────────────────────────
 TRANSCRIPTS_DIR = OBSIDIAN_VAULT / "transcripts"
@@ -168,16 +181,16 @@ def load_state() -> dict:
     if STATE_FILE.exists():
         try:
             return json.loads(STATE_FILE.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
+        except (json.JSONDecodeError, OSError) as exc:
+            log.debug("Failed to load sync state %s: %s", STATE_FILE, exc)
             return {"processed": {}, "last_run": None}
     return {"processed": {}, "last_run": None}
 
 
 def save_state(state: dict):
     """처리 상태 저장."""
-    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     state["last_run"] = datetime.now().isoformat()
-    STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    safe_save_json(STATE_FILE, state, origin="sync_obsidian")
 
 
 # ── 거래처 인덱스 업데이트 ────────────────────────────────────────
@@ -219,7 +232,7 @@ def update_counterparty_file(counterparty: str, transcript_link: str, date: str)
             f"{link_line}\n"
         )
 
-    cp_file.write_text(content, encoding="utf-8")
+    safe_write_text(cp_file, content)
 
 
 def update_counterparty_index(new_counterparties: set[str]):
@@ -241,7 +254,7 @@ def update_counterparty_index(new_counterparties: set[str]):
         )
         content += entry
 
-    COUNTERPARTY_INDEX.write_text(content, encoding="utf-8")
+    safe_write_text(COUNTERPARTY_INDEX, content)
 
 
 # ── 메인 ──────────────────────────────────────────────────────────
@@ -290,7 +303,8 @@ def main():
         # 내용 길이 체크
         try:
             size = f.stat().st_size
-        except OSError:
+        except OSError as exc:
+            log.debug("Failed to stat source file %s: %s", f, exc)
             continue
 
         if size < MIN_CONTENT_LENGTH:
@@ -340,7 +354,7 @@ def main():
             if args.dry_run:
                 print(f"  📄 {src_file.name} → {md_filename}")
             else:
-                md_path.write_text(md_content, encoding="utf-8")
+                safe_write_text(md_path, md_content)
 
             # 거래처 인덱스 업데이트
             if parsed["counterparty"]:

@@ -9,11 +9,40 @@ pipeline_utils.py - 공통 파이프라인 유틸리티.
 from __future__ import annotations
 
 import json
+import logging
 import re
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from src.pipeline.redact import redact_sensitive_text as _redact_sensitive_text
+
 KST = timezone(timedelta(hours=9))
+log = logging.getLogger(__name__)
+
+
+def redact_sensitive_text(text: str, limit: int | None = None) -> str:
+    """Mask common credentials and personal identifiers before logging."""
+    value = _redact_sensitive_text(text)
+    if limit is not None:
+        return value[-limit:]
+    return value
+
+
+def safe_write_text(path: Path, content: str) -> None:
+    """Atomic same-directory text write via temp file + replace."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    tmp.write_text(content, encoding="utf-8", newline="\n")
+    try:
+        tmp.replace(path)
+    except Exception as exc:
+        log.debug("Atomic text write cleanup failed for %s: %s", path, exc)
+        try:
+            tmp.unlink(missing_ok=True)
+        finally:
+            raise
 
 
 def normalize_title(title: str) -> str:
@@ -95,8 +124,8 @@ def safe_load_json(path, default=None):
         from safe_io import safe_read_json
 
         return safe_read_json(path, default=default)
-    except ImportError:
-        pass
+    except ImportError as exc:
+        log.debug("safe_io unavailable for JSON read: %s", exc)
 
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -118,8 +147,8 @@ def safe_save_json(path, data, origin: str | None = None):
         from safe_io import safe_write_json
 
         return safe_write_json(path, data, origin=origin or "pipeline_utils")
-    except ImportError:
-        pass
+    except ImportError as exc:
+        log.debug("safe_io unavailable for JSON write: %s", exc)
 
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"{path.name}.tmp")

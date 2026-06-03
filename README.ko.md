@@ -116,8 +116,8 @@ kct-sync-obsidian --all
 | `LLM_BASE_URL` | OpenAI 호환 API 베이스 URL (`ZAI_BASE_URL`도 지원) | `https://api.z.ai/api/coding/paas/v4` |
 | `LLM_MODEL` | 모델명 | `glm-5.1` |
 | `LLM_DISABLE_THINKING` | GLM thinking trace 비활성화 (`auto`, `true`, `false`) | `auto` |
-| `AUDIO_DIR` | 오디오 소스 디렉터리 | `data/audio` |
-| `TRANSCRIPT_DIR` | 전사 결과 출력 디렉터리 | `output/transcripts` |
+| `KCT_AUDIO_DIR` | 오디오 소스 디렉터리 (`AUDIO_DIR`도 이전 호환용으로 지원) | `data/audio` |
+| `KCT_TRANSCRIPT_DIR` | 전사 결과 출력 디렉터리 (`TRANSCRIPT_DIR`도 이전 호환용으로 지원) | `output/transcripts` |
 | `WHISPER_MODEL` | faster-whisper 모델 | `mobiuslabsgmbh/faster-whisper-large-v3-turbo` |
 | `HF_TOKEN_FILE` | HuggingFace 토큰 파일 경로 | (비어있음) |
 | `MY_NAME` | 발신자 식별용 이름 | `Me` |
@@ -127,6 +127,8 @@ kct-sync-obsidian --all
 | `EMAIL_TODO_STATE` | 이메일 TODO 상태 파일 경로 | `state/email_todo_state.json` |
 | `EMAIL_TODO_EXCLUSIONS` | 발신자 제외 목록 경로 | `state/email_todo_exclusions.json` |
 | `KCT_STATE_DIR` | 기본 상태 디렉터리 | `state` |
+| `KCT_LOG_DIR` | 로그 디렉터리 | `logs` |
+| `KCT_ENABLE_SHELL_JOBS` | Minions 큐의 신뢰된 로컬 shell 명령 payload 활성화 | `0` |
 | `MINIONS_DB_HOST` | Minions Postgres 호스트 | `localhost` |
 | `MINIONS_DB_PORT` | Minions Postgres 포트 | `5432` |
 | `MINIONS_DB_NAME` | Minions 데이터베이스명 | `minions` |
@@ -142,6 +144,11 @@ kct-sync-obsidian --all
 | `NAVER_MAIL_STATE_DIR` | 처리된 UID 상태 디렉터리 | `state/naver_mail` |
 
 전체 목록은 [.env.example](.env.example)을 참조하세요.
+
+추가 운영 문서:
+- [Security model](docs/security-model.md)
+- [Known limitations](docs/known-limitations.md)
+- [Troubleshooting](docs/troubleshooting.md)
 
 ## 프로젝트 구조
 

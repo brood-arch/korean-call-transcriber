@@ -122,6 +122,26 @@ def test_command_for_entry_supports_native_and_wsl_shapes(tmp_path):
     assert "--file" in wsl_text
 
 
+def test_success_history_redacts_sensitive_output():
+    from src.queue import retry_queue as q
+
+    entry = {"history": []}
+    q.mark_success(
+        entry,
+        now="2026-05-12T10:00:00+09:00",
+        argv=["python"],
+        stdout="sent to person@example.com with token=abc123456789012345",
+        stderr="call 010-1234-5678 failed",
+    )
+
+    history = entry["history"][-1]
+    assert "person@example.com" not in history["stdout_tail"]
+    assert "abc123456789012345" not in history["stdout_tail"]
+    assert "010-1234-5678" not in history["stderr_tail"]
+    assert "p***@example.com" in history["stdout_tail"]
+    assert "010-****-****" in history["stderr_tail"]
+
+
 def test_worker_records_failure_attempt_backoff_log_and_backup(tmp_path):
     from src.queue import retry_queue as q
 

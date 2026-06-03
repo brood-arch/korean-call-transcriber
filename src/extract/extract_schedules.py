@@ -9,22 +9,19 @@ Usage:
 
 import argparse
 import json
-import os
+import logging
 import time
-import urllib.error
-import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from src.config import STATE_DIR, TRANSCRIPT_DIR
+from src.extract.client import call_llm_json
+from src.pipeline.utils import safe_save_json
+
+log = logging.getLogger(__name__)
 KST = timezone(timedelta(hours=9))
 
-TRANSCRIPT_DIR = Path(os.environ.get("TRANSCRIPT_DIR", "data/transcripts"))
-STATE_DIR = Path("state")
 OUTPUT_FILE = STATE_DIR / "extracted_schedules.json"
-
-LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
-LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.example.com/v1")
-LLM_MODEL = os.environ.get("LLM_MODEL", "glm-5-turbo")
 
 SCHEDULE_PROMPT = """Extract appointments, deadlines, and todos from this call transcription.
 
@@ -73,7 +70,8 @@ def get_schedule_relevant_transcripts(days: int) -> list[dict]:
             return []
         client = chromadb.PersistentClient(path=str(chroma_path))
         col = client.get_collection("transcripts")
-    except Exception:
+    except Exception as exc:
+        log.debug("ChromaDB schedule lookup unavailable: %s", exc)
         return []
 
     queries = [
@@ -98,7 +96,8 @@ def get_schedule_relevant_transcripts(days: int) -> list[dict]:
                 if doc_path.exists():
                     content = doc_path.read_text(encoding="utf-8").strip()
                     all_results.append({"path": doc_id, "name": doc_path.stem, "content": content})
-        except Exception:
+        except Exception as exc:
+            log.debug("Schedule RAG query failed for %r: %s", query, exc)
             continue
 
     return all_results
@@ -107,30 +106,8 @@ def get_schedule_relevant_transcripts(days: int) -> list[dict]:
 def call_llm(content: str) -> dict:
     """Call LLM for schedule extraction."""
     prompt = SCHEDULE_PROMPT.replace("{content}", content[:8000], 1)
-
-    payload = json.dumps({
-        "model": LLM_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 2048,
-        "temperature": 0.1,
-    }).encode("utf-8")
-
-    api_url = os.environ.get("LLM_BASE_URL", LLM_BASE_URL).rstrip("/") + "/chat/completions"
-    api_key = os.environ.get("LLM_API_KEY", LLM_API_KEY)
-    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
-
-    for attempt in range(3):
-        try:
-            req = urllib.request.Request(api_url, data=payload, headers=headers)
-            with urllib.request.urlopen(req, timeout=120) as resp:
-                result = json.loads(resp.read().decode("utf-8"))
-                text = result.get("choices", [{}])[0].get("message", {}).get("content", "")
-                return parse_schedule_response(text)
-        except Exception as e:
-            print(f"    API error (attempt {attempt+1}/3): {e}")
-            time.sleep([5, 15, 30][attempt])
-
-    return {"appointments": [], "todos": []}
+    parsed, _usage = call_llm_json(prompt, max_tokens=2048, timeout=120, response_format=True)
+    return parse_schedule_response(json.dumps(parsed, ensure_ascii=False)) if parsed is not None else {"appointments": [], "todos": []}
 
 
 def parse_schedule_response(text: str) -> dict:
@@ -149,8 +126,8 @@ def parse_schedule_response(text: str) -> dict:
             try:
                 data = json.loads(cleaned[start:end])
                 return {"appointments": data.get("appointments", []), "todos": data.get("todos", [])}
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("Failed to parse nested schedule JSON: %s", exc)
         return {"appointments": [], "todos": []}
 
 
@@ -164,8 +141,8 @@ def parse_transcript_name(stem: str) -> dict:
         if len(dt_part) == 14 and dt_part.isdigit():
             try:
                 result["called_at"] = f"{dt_part[:4]}-{dt_part[4:6]}-{dt_part[6:8]} {dt_part[8:10]}:{dt_part[10:12]}"
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("Failed to parse transcript timestamp from %s: %s", stem, exc)
             phone_part = parts[-2]
             if phone_part.isdigit() and len(phone_part) >= 10:
                 result["phone"] = phone_part
@@ -241,7 +218,7 @@ def main():
         "appointments": all_appointments,
         "todos": all_todos,
     }
-    OUTPUT_FILE.write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
+    safe_save_json(OUTPUT_FILE, output)
     print(f"Saved to {OUTPUT_FILE}")
 
 

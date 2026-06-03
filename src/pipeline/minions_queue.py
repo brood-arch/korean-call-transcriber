@@ -40,6 +40,18 @@ try:
 except ImportError:
     psycopg2 = None  # type: ignore
 
+try:
+    from src.pipeline.utils import redact_sensitive_text
+except Exception:
+    def redact_sensitive_text(text: str, limit: int | None = None) -> str:
+        value = str(text or "")
+        return value[-limit:] if limit is not None else value
+
+try:
+    from src.config import MINIONS_DB_URL
+except Exception:
+    MINIONS_DB_URL = os.environ.get("MINIONS_DB_URL", "")
+
 KST = timezone(timedelta(hours=9))
 
 # Protected job names (MCP/agent cannot submit these directly)
@@ -51,6 +63,8 @@ MAX_CONCURRENT = 3
 
 def _db_config() -> dict:
     """Build Postgres connection config from environment variables."""
+    if MINIONS_DB_URL:
+        return {"dsn": MINIONS_DB_URL}
     password = os.environ.get("MINIONS_DB_PASS", "")
     if not password:
         raise EnvironmentError(
@@ -73,7 +87,12 @@ def _get_conn():
             "psycopg2 is required for MinionsQueue. "
             "Install with: pip install psycopg2-binary"
         )
-    return psycopg2.connect(**_db_config())
+    cfg = _db_config()
+    return psycopg2.connect(cfg["dsn"]) if "dsn" in cfg else psycopg2.connect(**cfg)
+
+
+def _shell_jobs_enabled() -> bool:
+    return os.environ.get("KCT_ENABLE_SHELL_JOBS", "").lower() in {"1", "true", "yes"}
 
 
 class MinionsQueue:
@@ -90,11 +109,11 @@ class MinionsQueue:
 
     def _test_connection(self) -> None:
         """Verify database connectivity."""
-        conn = psycopg2.connect(**self.db_config)
+        conn = psycopg2.connect(self.db_config["dsn"]) if "dsn" in self.db_config else psycopg2.connect(**self.db_config)
         conn.close()
 
     def _conn(self):
-        return psycopg2.connect(**self.db_config)
+        return psycopg2.connect(self.db_config["dsn"]) if "dsn" in self.db_config else psycopg2.connect(**self.db_config)
 
     # ── Submit ──────────────────────────────────────────
 
@@ -129,6 +148,8 @@ class MinionsQueue:
         Returns:
             Job ID (int).
         """
+        if name == "shell" and not _shell_jobs_enabled():
+            raise RuntimeError("Shell jobs are disabled by default. Set KCT_ENABLE_SHELL_JOBS=1 for trusted local automation.")
         conn = self._conn()
         try:
             cur = conn.cursor()
@@ -466,6 +487,11 @@ class MinionsQueue:
 
         try:
             if cmd:
+                if not _shell_jobs_enabled():
+                    return {
+                        "exit_code": 2,
+                        "error": "Shell command payloads are disabled by default. Set KCT_ENABLE_SHELL_JOBS=1 for trusted local automation.",
+                    }
                 proc = subprocess.run(
                     cmd, shell=True, cwd=cwd, env=run_env,
                     capture_output=True, text=True, timeout=timeout,
@@ -480,13 +506,13 @@ class MinionsQueue:
 
             return {
                 "exit_code": proc.returncode,
-                "stdout": proc.stdout[-2000:] if proc.stdout else "",
-                "stderr": proc.stderr[-2000:] if proc.stderr else "",
+                "stdout": redact_sensitive_text(proc.stdout or "", limit=2000),
+                "stderr": redact_sensitive_text(proc.stderr or "", limit=2000),
             }
         except subprocess.TimeoutExpired:
             return {"exit_code": -1, "error": f"Timeout ({timeout}s)"}
         except Exception as e:
-            return {"exit_code": -1, "error": str(e)}
+            return {"exit_code": -1, "error": redact_sensitive_text(str(e))}
 
     # ── Fan-out ────────────────────────────────────────
 

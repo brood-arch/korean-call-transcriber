@@ -206,7 +206,8 @@ def test_list_jobs(_mock_psycopg2):
 
 # ── Shell execution ─────────────────────────────────────────────────────
 
-def test_execute_shell_cmd(_mock_psycopg2):
+def test_execute_shell_cmd(_mock_psycopg2, monkeypatch):
+    monkeypatch.setenv("KCT_ENABLE_SHELL_JOBS", "1")
     mq, _ = _make_queue(_mock_psycopg2)
     job = {
         "payload": json.dumps({"cmd": "echo hello"}),
@@ -217,7 +218,20 @@ def test_execute_shell_cmd(_mock_psycopg2):
     assert "hello" in result["stdout"]
 
 
-def test_execute_shell_argv(_mock_psycopg2):
+def test_execute_shell_cmd_disabled_by_default(_mock_psycopg2, monkeypatch):
+    monkeypatch.delenv("KCT_ENABLE_SHELL_JOBS", raising=False)
+    mq, _ = _make_queue(_mock_psycopg2)
+    job = {
+        "payload": json.dumps({"cmd": "echo hello"}),
+        "timeout_ms": 5000,
+    }
+    result = mq.execute_shell(job)
+    assert result["exit_code"] == 2
+    assert "disabled by default" in result["error"]
+
+
+def test_execute_shell_argv(_mock_psycopg2, monkeypatch):
+    monkeypatch.setenv("KCT_ENABLE_SHELL_JOBS", "1")
     mq, _ = _make_queue(_mock_psycopg2)
     job = {
         "payload": json.dumps({"argv": ["python", "-c", "print(42)"]}),
@@ -228,7 +242,8 @@ def test_execute_shell_argv(_mock_psycopg2):
     assert "42" in result["stdout"]
 
 
-def test_execute_shell_no_cmd(_mock_psycopg2):
+def test_execute_shell_no_cmd(_mock_psycopg2, monkeypatch):
+    monkeypatch.setenv("KCT_ENABLE_SHELL_JOBS", "1")
     mq, _ = _make_queue(_mock_psycopg2)
     job = {
         "payload": json.dumps({}),
@@ -237,6 +252,13 @@ def test_execute_shell_no_cmd(_mock_psycopg2):
     result = mq.execute_shell(job)
     assert result["exit_code"] == 1
     assert "error" in result
+
+
+def test_submit_shell_disabled_by_default(_mock_psycopg2, monkeypatch):
+    monkeypatch.delenv("KCT_ENABLE_SHELL_JOBS", raising=False)
+    mq, _ = _make_queue(_mock_psycopg2)
+    with pytest.raises(RuntimeError, match="disabled by default"):
+        mq.submit("shell", {"cmd": "echo hello"})
 
 
 # ── Fan-out ─────────────────────────────────────────────────────────────

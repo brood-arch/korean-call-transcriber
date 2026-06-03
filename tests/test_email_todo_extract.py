@@ -1,7 +1,6 @@
 """Tests for src.integrations.email_todo_extract — promo filter, exclusions, state, LLM mock."""
 
-import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -96,23 +95,12 @@ def test_save_and_load_state(tmp_path):
 def test_call_llm_extract_mocked(tmp_path, monkeypatch):
     """Verify call_llm_extract parses a valid JSON response."""
     from src.integrations.email_todo_extract import call_llm_extract
-    mock_response = json.dumps({
-        "choices": [{
-            "message": {
-                "content": json.dumps({
-                    "has_actionable_items": True,
-                    "todos": [{"title": "Reply to client", "priority": "high"}],
-                })
-            }
-        }]
-    }).encode("utf-8")
+    parsed = {
+        "has_actionable_items": True,
+        "todos": [{"title": "Reply to client", "priority": "high"}],
+    }
 
-    mock_resp = MagicMock()
-    mock_resp.read.return_value = mock_response
-    mock_resp.__enter__ = MagicMock(return_value=mock_resp)
-    mock_resp.__exit__ = MagicMock(return_value=False)
-
-    with patch("src.integrations.email_todo_extract.urllib.request.urlopen", return_value=mock_resp):
+    with patch("src.integrations.email_todo_extract.call_llm_json", return_value=(parsed, {})):
         result = call_llm_extract("Email content here", "fake-key", "https://api.test.com/v1", "test-model")
 
     assert result is not None
@@ -123,7 +111,7 @@ def test_call_llm_extract_mocked(tmp_path, monkeypatch):
 def test_call_llm_extract_failure_returns_none(monkeypatch):
     """If LLM call fails, return None."""
     from src.integrations.email_todo_extract import call_llm_extract
-    with patch("src.integrations.email_todo_extract.urllib.request.urlopen", side_effect=Exception("API error")):
+    with patch("src.integrations.email_todo_extract.call_llm_json", return_value=(None, {})):
         result = call_llm_extract("content", "key", "https://api.test.com/v1", "model")
     assert result is None
 

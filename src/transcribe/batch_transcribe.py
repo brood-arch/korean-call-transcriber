@@ -33,16 +33,18 @@ from pathlib import Path
 
 import psutil
 
+from src.config import AUDIO_DIR, EXIT_FAILURE, EXIT_OK, EXIT_PARTIAL, LOG_DIR, STATE_DIR, TRANSCRIPT_DIR
 from src.correct.transcription_corrections import apply_corrections, ensure_rules_file
+from src.pipeline.utils import safe_write_text
 
 # ffmpeg setup: ensure the Python Scripts dir (which may contain ffmpeg.exe) is in PATH
 os.environ["PATH"] = str(Path(sys.executable).parent) + os.pathsep + os.environ.get("PATH", "")
 
 # ── Configuration from environment ──────────────────────────────────────
-SOURCE_DIR = Path(os.environ.get("AUDIO_DIR", "data/audio"))
-OUTPUT_DIR = Path(os.environ.get("TRANSCRIPT_DIR", "data/transcripts"))
-LOG_FILE = Path(os.environ.get("TRANSCRIBE_LOG", "logs/transcribe_whisperx.log"))
-BLACKLIST_FILE = Path("state/transcribe_blacklist.json")
+SOURCE_DIR = Path(os.environ.get("AUDIO_DIR", str(AUDIO_DIR)))
+OUTPUT_DIR = Path(os.environ.get("TRANSCRIPT_DIR", str(TRANSCRIPT_DIR)))
+LOG_FILE = Path(os.environ.get("TRANSCRIBE_LOG", str(LOG_DIR / "transcribe_whisperx.log")))
+BLACKLIST_FILE = STATE_DIR / "transcribe_blacklist.json"
 HF_TOKEN_FILE = Path(os.environ.get("HF_TOKEN_FILE", ""))
 MY_NAME = os.environ.get("MY_NAME", "Me")
 
@@ -57,8 +59,8 @@ LONG_AUDIO_CHUNK_THRESHOLD_SEC = 300
 LONG_AUDIO_CHUNK_SEC = 300
 LONG_AUDIO_FAST_PATH_SEC = 30 * 60  # Skip align/diarize on very long calls
 
-QUALITY_LOG = Path("logs/transcribe_quality.jsonl")
-CORRECTION_STATS = Path("state/correction_stats.json")
+QUALITY_LOG = LOG_DIR / "transcribe_quality.jsonl"
+CORRECTION_STATS = STATE_DIR / "correction_stats.json"
 
 GPU_MIN_FREE_MB = 4000
 GPU_MIN_FREE_PER_FILE = 2000
@@ -82,6 +84,8 @@ def parse_args():
     p.add_argument("--recent-first", action="store_true", help="Process newest files first")
     p.add_argument("--force", action="store_true", help="Overwrite existing transcripts")
     p.add_argument("--no-diarize", action="store_true", help="Skip speaker diarization")
+    p.add_argument("--verbose", action="store_true", help="Print extra diagnostic output")
+    p.add_argument("--json", action="store_true", help="Print machine-readable summary JSON")
     args = p.parse_args()
     if not args.file and os.environ.get("TRANSCRIBE_FILE"):
         args.file = os.environ["TRANSCRIBE_FILE"]
@@ -100,7 +104,8 @@ def get_gpu_free_mb() -> int:
             capture_output=True, text=True, check=False, timeout=10,
         )
         return int((r.stdout or "0").strip().splitlines()[0])
-    except Exception:
+    except Exception as exc:
+        logging.debug("GPU memory query failed: %s", exc)
         return 0
 
 
@@ -139,8 +144,8 @@ def kill_gpu_hogs() -> list[str]:
             if "python" in name.lower():
                 subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True, timeout=10)
                 killed.append(f"{name}(PID {pid})")
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.debug("Failed to kill GPU processes: %s", exc)
     return killed
 
 
@@ -155,11 +160,12 @@ def get_audio_duration(file) -> float:
         m = re.search(r"Duration:\s*(\d+):(\d+):(\d+\.\d+)", r.stderr or "")
         if m:
             return int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.debug("ffmpeg duration probe failed for %s: %s", file, exc)
     try:
         return Path(file).stat().st_size / 1024 / 1024 * 60
-    except Exception:
+    except Exception as exc:
+        logging.debug("Stat-based duration fallback failed for %s: %s", file, exc)
         return 0
 
 
@@ -169,7 +175,8 @@ def _load_blacklist() -> dict:
     if BLACKLIST_FILE.exists():
         try:
             return json.loads(BLACKLIST_FILE.read_text(encoding="utf-8"))
-        except Exception:
+        except Exception as exc:
+            logging.debug("Failed to load blacklist %s: %s", BLACKLIST_FILE, exc)
             return {}
     return {}
 
@@ -500,7 +507,7 @@ def main():
             gpu_free = get_gpu_free_mb()
         if gpu_free < GPU_MIN_FREE_MB:
             print("❌ GPU insufficient. Skipping.", flush=True)
-            return 2
+            return EXIT_FAILURE
 
     success = 0
     for i, audio_path in enumerate(pending, 1):
@@ -564,7 +571,7 @@ def main():
 
             if out_path.exists():
                 out_path = OUTPUT_DIR / f"{audio_path.stem}_{datetime.now().strftime('%H%M%S')}.txt"
-            out_path.write_text(corrected_text + "\n", encoding="utf-8")
+            safe_write_text(out_path, corrected_text + "\n")
             success += 1
 
             elapsed = time.time() - t0
@@ -583,7 +590,10 @@ def main():
 
     gpu_after = get_gpu_free_mb()
     print(f"\nDone: {success}/{len(pending)} | GPU: {gpu_after}MB", flush=True)
-    return 0 if success > 0 else 1
+    summary = {"success": success, "total": len(pending), "gpu_free_mb": gpu_after}
+    if args.json:
+        print(json.dumps(summary, ensure_ascii=False), flush=True)
+    return EXIT_OK if success > 0 else EXIT_PARTIAL
 
 
 if __name__ == "__main__":

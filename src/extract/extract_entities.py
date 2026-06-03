@@ -17,26 +17,23 @@ Usage:
 import argparse
 import hashlib
 import json
-import os
+import logging
 import time
-import urllib.error
-import urllib.request
 from datetime import datetime
 from pathlib import Path
 
+from src.config import STATE_DIR, TRANSCRIPT_DIR
+from src.extract.client import call_llm_json
+from src.pipeline.utils import safe_save_json
+
+log = logging.getLogger(__name__)
 KST = __import__("datetime").timezone(__import__("datetime").timedelta(hours=9))
 
 # ── Configuration ───────────────────────────────────────────────────────
-DEFAULT_BASE_DIR = os.environ.get("TRANSCRIPT_DIR", "data/transcripts")
-DEFAULT_STATE_DIR = "state/entity_extraction"
+DEFAULT_BASE_DIR = str(TRANSCRIPT_DIR)
+DEFAULT_STATE_DIR = str(STATE_DIR / "entity_extraction")
 BATCH_SIZE = 20
 API_DELAY = 2.0
-MAX_RETRIES = 3
-RETRY_BACKOFF = [5, 15, 30]
-
-LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
-LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.example.com/v1")
-LLM_MODEL = os.environ.get("LLM_MODEL", "glm-5.1")
 
 ENTITY_PROMPT = """Extract entities and relations from this call transcription.
 
@@ -73,34 +70,8 @@ def compute_file_hash(path: Path) -> str:
 def call_llm(content: str) -> dict | None:
     """Call LLM for entity extraction."""
     prompt = ENTITY_PROMPT.replace("{content}", content[:8000], 1)
-
-    payload = json.dumps({
-        "model": LLM_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 2048,
-        "temperature": 0.1,
-    }).encode("utf-8")
-
-    api_url = os.environ.get("LLM_BASE_URL", LLM_BASE_URL).rstrip("/") + "/chat/completions"
-    api_key = os.environ.get("LLM_API_KEY", LLM_API_KEY)
-    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
-
-    for attempt in range(MAX_RETRIES):
-        try:
-            req = urllib.request.Request(api_url, data=payload, headers=headers)
-            with urllib.request.urlopen(req, timeout=180) as resp:
-                result = json.loads(resp.read().decode("utf-8"))
-                text = result.get("choices", [{}])[0].get("message", {}).get("content", "")
-                return parse_entity_response(text)
-        except urllib.error.HTTPError as e:
-            if e.code == 429:
-                time.sleep(15 * (attempt + 1))
-            elif attempt < len(RETRY_BACKOFF):
-                time.sleep(RETRY_BACKOFF[attempt])
-        except Exception:
-            if attempt < len(RETRY_BACKOFF):
-                time.sleep(RETRY_BACKOFF[attempt])
-    return None
+    parsed, _usage = call_llm_json(prompt, max_tokens=2048, timeout=180, response_format=True)
+    return parse_entity_response(json.dumps(parsed, ensure_ascii=False)) if parsed is not None else None
 
 
 def parse_entity_response(text: str) -> dict:
@@ -120,8 +91,8 @@ def parse_entity_response(text: str) -> dict:
             try:
                 data = json.loads(cleaned[start:end])
                 return {"entities": data.get("entities", []), "relations": data.get("relations", [])}
-            except json.JSONDecodeError:
-                pass
+            except json.JSONDecodeError as exc:
+                log.debug("Failed to parse nested entity JSON: %s", exc)
         return {"entities": [], "relations": [], "parse_error": True, "raw": cleaned[:500]}
 
 
@@ -160,8 +131,8 @@ def run_extraction(args):
                     existing = json.load(f)
                 if existing.get("status") == "done":
                     continue
-            except (json.JSONDecodeError, KeyError):
-                pass
+            except (json.JSONDecodeError, KeyError) as exc:
+                log.debug("Ignoring invalid existing entity batch %s: %s", batch_result_path, exc)
 
         batch_entities = []
         batch_relations = []
@@ -198,8 +169,7 @@ def run_extraction(args):
             "status": "done",
             "timestamp": datetime.now().isoformat(),
         }
-        with open(batch_result_path, "w", encoding="utf-8") as f:
-            json.dump(batch_output, f, ensure_ascii=False, indent=2)
+        safe_save_json(batch_result_path, batch_output)
 
         print(f"  [{batch_id}] {len(batch_entities)} entities, {len(batch_relations)} relations, {len(batch_errors)} errors")
 
@@ -208,8 +178,7 @@ def run_extraction(args):
             "total_batches": total_batches,
             "last_updated": datetime.now().isoformat(),
         }
-        with open(checkpoint_path, "w", encoding="utf-8") as f:
-            json.dump(checkpoint, f, ensure_ascii=False, indent=2)
+        safe_save_json(checkpoint_path, checkpoint)
 
         if batch_idx < total_batches - 1:
             time.sleep(args.api_delay)

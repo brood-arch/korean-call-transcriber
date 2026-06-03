@@ -2,16 +2,19 @@
 """Pipeline health check: detect missed transcriptions and failed notifications."""
 
 import json
+import logging
 import os
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 KST = timezone(timedelta(hours=9))
+log = logging.getLogger(__name__)
 
 try:
-    from pipeline_paths import AUDIO_DIR, STATE_DIR, TRANSCRIPT_DIR
-except Exception:
+    from src.pipeline.paths import AUDIO_DIR, STATE_DIR, TRANSCRIPT_DIR
+except Exception as exc:
+    log.debug("Falling back to local health-check paths: %s", exc)
     TRANSCRIPT_DIR = Path(os.environ.get("TRANSCRIPT_DIR", "./data/transcripts"))
     AUDIO_DIR = Path(os.environ.get("AUDIO_DIR", "./data/audio"))
     STATE_DIR = Path(os.environ.get("KCT_STATE_DIR", "./state"))
@@ -49,8 +52,8 @@ def main():
             if isinstance(ex, dict):
                 for k, v in ex.items():
                     pt.setdefault(k, v)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("Failed to load extraction processed index %s: %s", EXTRACT_PROCESSED, exc)
     blacklist = set()
     if BLACKLIST_FILE.exists():
         bl = json.loads(BLACKLIST_FILE.read_text("utf-8"))
@@ -102,8 +105,8 @@ def main():
                             stem = r.get("file", "")
                             if stem:
                                 processed_stems.add(stem)
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("Failed to inspect extraction batch %s: %s", bf, exc)
     for f in sorted(TRANSCRIPT_DIR.glob("*.txt")):
         mtime = datetime.fromtimestamp(f.stat().st_mtime, tz=KST)
         if mtime < cutoff_lower:

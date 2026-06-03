@@ -284,8 +284,8 @@ python -m src.pipeline.validate_state --quiet
 | `LLM_BASE_URL` | OpenAI-compatible API base URL (`ZAI_BASE_URL` is also supported) | `https://api.z.ai/api/coding/paas/v4` |
 | `LLM_MODEL` | Model name | `glm-5.1` |
 | `LLM_DISABLE_THINKING` | Disable GLM thinking traces (`auto`, `true`, `false`) | `auto` |
-| `AUDIO_DIR` | Audio source directory | `data/audio` |
-| `TRANSCRIPT_DIR` | Transcript output directory | `output/transcripts` |
+| `KCT_AUDIO_DIR` | Audio source directory (`AUDIO_DIR` is also supported for backward compatibility) | `data/audio` |
+| `KCT_TRANSCRIPT_DIR` | Transcript output directory (`TRANSCRIPT_DIR` is also supported for backward compatibility) | `output/transcripts` |
 | `WHISPER_MODEL` | faster-whisper model | `mobiuslabsgmbh/faster-whisper-large-v3-turbo` |
 | `HF_TOKEN_FILE` | HuggingFace token file path | (empty) |
 | `MY_NAME` | Speaker name for caller ID | `Me` |
@@ -295,6 +295,8 @@ python -m src.pipeline.validate_state --quiet
 | `EMAIL_TODO_STATE` | Path to email TODO state file | `state/email_todo_state.json` |
 | `EMAIL_TODO_EXCLUSIONS` | Path to sender exclusion list | `state/email_todo_exclusions.json` |
 | `KCT_STATE_DIR` | Base state directory | `state` |
+| `KCT_LOG_DIR` | Log directory | `logs` |
+| `KCT_ENABLE_SHELL_JOBS` | Enable trusted local shell command payloads in Minions queue | `0` |
 | `MINIONS_DB_HOST` | Minions Postgres host | `localhost` |
 | `MINIONS_DB_PORT` | Minions Postgres port | `5432` |
 | `MINIONS_DB_NAME` | Minions database name | `minions` |
@@ -310,6 +312,11 @@ python -m src.pipeline.validate_state --quiet
 | `NAVER_MAIL_STATE_DIR` | State directory for processed UIDs | `state/naver_mail` |
 
 See [.env.example](.env.example) for the full list.
+
+Additional operational notes:
+- [Security model](docs/security-model.md)
+- [Known limitations](docs/known-limitations.md)
+- [Troubleshooting](docs/troubleshooting.md)
 
 ## Project Structure
 
@@ -380,7 +387,7 @@ The signal detector uses a weighted multi-signal scoring system to pre-filter te
 
 ### Minions Job Queue
 
-The Postgres-backed job queue provides crash recovery, idempotent submission, fan-out parallel execution with aggregators, and job steering via messages.
+The Postgres-backed job queue provides crash recovery, idempotent submission, fan-out parallel execution with aggregators, and job steering via messages. Shell command payloads are disabled by default; set `KCT_ENABLE_SHELL_JOBS=1` only for trusted local automation.
 
 ## Contributing
 
@@ -395,6 +402,14 @@ The Postgres-backed job queue provides crash recovery, idempotent submission, fa
 This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
 
 ## Changelog
+
+### v0.3.4
+- Centralized LLM configuration and reused the common LLM client across extraction modules
+- Added sensitive-output redaction before retry/minions logs store stdout and stderr tails
+- Disabled Minions shell command payloads by default unless `KCT_ENABLE_SHELL_JOBS=1`
+- Replaced duplicated signal detector implementation with a compatibility shim
+- Reused centralized WSL detection and atomic write helpers across more runtime modules
+- Preferred `KCT_*` path environment variables while preserving legacy names
 
 ### v0.3.3
 - Added console entry points: `kct-transcribe`, `kct-extract`, `kct-health`, `kct-sync-obsidian`

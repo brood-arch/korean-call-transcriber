@@ -14,6 +14,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from src.pipeline.paths import is_wsl
+
 WORKSPACE = Path(__file__).resolve().parent.parent
 WIN_PYTHON = r".\tools\whisperx-venv\Scripts\python.exe"
 WIN_ALIGN_WORKER = os.environ.get("KCT_ALIGN_WORKER", r"src\transcribe\align_worker.py")
@@ -67,9 +69,9 @@ def main():
     args = parser.parse_args()
 
     # Detect OS and set paths
-    is_wsl = os.path.exists("/proc/version") and "microsoft" in open("/proc/version").read().lower()
+    running_on_wsl = is_wsl()
 
-    if is_wsl:
+    if running_on_wsl:
         if args.transcript_dir:
             transcript_dir = Path(args.transcript_dir)
         else:
@@ -95,8 +97,8 @@ def main():
                 mt = datetime.fromtimestamp(segs.stat().st_mtime, tz=KST)
                 if mt >= cutoff:
                     filtered.append((stem, segs, audio))
-            except Exception:
-                pass
+            except Exception as exc:
+                print(f"  WARN: failed to stat segments file: {exc}")
         missing = filtered
 
     if not missing:
@@ -110,7 +112,7 @@ def main():
     for i, (stem, segs_path, audio_path) in enumerate(missing):
         print(f"\n[{i+1}/{len(missing)}] {stem}")
 
-        if is_wsl:
+        if running_on_wsl:
             # Convert WSL paths to Windows paths for the worker
             win_audio = wsl_path_to_windows(audio_path)
             win_segs = wsl_path_to_windows(segs_path)
@@ -124,7 +126,7 @@ def main():
             python_exe = WIN_PYTHON
             script = WIN_ALIGN_WORKER
 
-        if is_wsl:
+        if running_on_wsl:
             # Run Windows Python directly from WSL without cmd.exe.
             # subprocess(list) preserves spaces in data safely.
             wsl_python = "~/.openclaw/workspace/tools/whisperx-venv/Scripts/python.exe"
@@ -149,8 +151,8 @@ def main():
                     meta = payload.get("_meta", {})
                     if not meta.get("align_ok", False) or not meta.get("diarize_ok", False):
                         meta_ok = False
-                except Exception:
-                    pass
+                except Exception as exc:
+                    print(f"  WARN: could not inspect result metadata: {exc}")
                 if not meta_ok or result.returncode not in (0, 3221226505):
                     print(f"  WARN ({size} bytes, exit={result.returncode}, meta_ok={meta_ok})")
                     fail += 1

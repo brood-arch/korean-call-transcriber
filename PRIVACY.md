@@ -22,6 +22,8 @@ This project processes **phone call recordings, email messages, SMS texts, and c
 - Configure `LLM_BASE_URL` to use a local/private LLM if data sensitivity is a concern.
 - The prompt instructs the LLM not to store data, but API providers may log requests per their own policies.
 
+**Telegram notifications**: If `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are configured, extracted TODO/schedule summaries may be sent to Telegram. Leave these variables unset to keep notifications local-only.
+
 **Email/Calendar**: Credentials are read from environment variables only. IMAP connections use TLS.
 
 ### What Gets Stored Locally
@@ -29,6 +31,8 @@ This project processes **phone call recordings, email messages, SMS texts, and c
 - `output/transcripts/` — Full text transcripts
 - `state/` — Extracted TODOs, entities, schedules, processed-file tracking
 - `logs/` — Pipeline execution logs (may contain filenames and summaries)
+
+Recent versions redact common emails, phone numbers, tokens, and user paths before storing subprocess output tails, but users should still treat logs and state files as sensitive.
 
 ### Recommendations
 

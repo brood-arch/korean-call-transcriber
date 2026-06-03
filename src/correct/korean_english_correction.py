@@ -11,7 +11,9 @@
 #   echo "깃허브에 PR 올려놨어" | python korean_english_correction.py --mode llm
 
 import argparse
+import json
 import sys
+from pathlib import Path
 
 # Dictionary of common Korean transliterations of English tech terms.
 # Used for fast, dictionary-based correction without LLM calls.
@@ -157,6 +159,19 @@ QUICK_FIX_DICT = {
     "캡슐화": "encapsulation",
     "추상화": "abstraction",
 }
+
+
+def load_corrections(path: str | Path | None = None) -> dict[str, str]:
+    """Load correction mappings, falling back to the built-in quick-fix dict."""
+    if path is None:
+        return dict(QUICK_FIX_DICT)
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return dict(QUICK_FIX_DICT)
+    if not isinstance(data, dict):
+        return dict(QUICK_FIX_DICT)
+    return {str(k): str(v) for k, v in data.items()}
 
 def quick_fix(text: str) -> str:
     """Dictionary-based fast correction (no LLM call).

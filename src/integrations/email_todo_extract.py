@@ -16,26 +16,27 @@ Environment variables:
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
 import re
-import urllib.error
-import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+
+from src.config import STATE_DIR, get_llm_config
+from src.extract.client import call_llm_json
+from src.pipeline.utils import safe_load_json, safe_save_json
 
 log = logging.getLogger("email_todo_extract")
 
 # ── Config (all via env vars) ───────────────────────────────────────────
 EXTRACT_STATE_PATH = Path(os.environ.get(
     "EMAIL_TODO_STATE",
-    "state/email_todo_state.json",
+    str(STATE_DIR / "email_todo_state.json"),
 ))
 EXCLUSION_PATH = Path(os.environ.get(
     "EMAIL_TODO_EXCLUSIONS",
-    "state/email_todo_exclusions.json",
+    str(STATE_DIR / "email_todo_exclusions.json"),
 ))
 
 KST = timezone(timedelta(hours=9))
@@ -65,20 +66,12 @@ PROMO_BODY_KEYWORDS = [
 # ── Exclusion list management ───────────────────────────────────────────
 def load_exclusions() -> dict:
     """Load sender exclusion list. Format: {"senders": ["addr@example.com", ...]}"""
-    if not EXCLUSION_PATH.exists():
-        return {"senders": []}
-    try:
-        return json.loads(EXCLUSION_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        return {"senders": []}
+    return safe_load_json(EXCLUSION_PATH, default={"senders": []}) or {"senders": []}
 
 
 def save_exclusions(excl: dict) -> None:
     """Save exclusion list to disk."""
-    EXCLUSION_PATH.parent.mkdir(parents=True, exist_ok=True)
-    EXCLUSION_PATH.write_text(
-        json.dumps(excl, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    safe_save_json(EXCLUSION_PATH, excl, origin="email_todo_extract")
 
 
 def add_exclusion(addr: str) -> dict:
@@ -117,20 +110,15 @@ def is_promotional(subject: str, body_preview: str) -> bool:
 # ── State management ────────────────────────────────────────────────────
 def load_state() -> dict:
     """Load extraction state (tracks which UIDs have been processed)."""
-    if not EXTRACT_STATE_PATH.exists():
-        return {"extracted_uids": {}, "last_extraction": None}
-    try:
-        return json.loads(EXTRACT_STATE_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        return {"extracted_uids": {}, "last_extraction": None}
+    return safe_load_json(EXTRACT_STATE_PATH, default={"extracted_uids": {}, "last_extraction": None}) or {
+        "extracted_uids": {},
+        "last_extraction": None,
+    }
 
 
 def save_state(state: dict) -> None:
     """Save extraction state to disk."""
-    EXTRACT_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    EXTRACT_STATE_PATH.write_text(
-        json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    safe_save_json(EXTRACT_STATE_PATH, state, origin="email_todo_extract")
 
 
 # ── LLM extraction ─────────────────────────────────────────────────────
@@ -162,10 +150,7 @@ Email content:
 {content}"""
 
 MAX_CONTENT_CHARS = 8000
-MAX_RETRIES = 2
-
-
-def call_llm_extract(content: str, api_key: str, base_url: str, model: str) -> dict | None:
+def call_llm_extract(content: str, api_key: str = "", base_url: str = "", model: str = "") -> dict | None:
     """Call OpenAI-compatible LLM to extract TODOs from email content.
 
     Args:
@@ -178,42 +163,18 @@ def call_llm_extract(content: str, api_key: str, base_url: str, model: str) -> d
         Parsed JSON dict from LLM response, or None on failure.
     """
     prompt = EXTRACTION_PROMPT.replace("{content}", content[:MAX_CONTENT_CHARS], 1)
-
-    payload = json.dumps({
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 2048,
-        "temperature": 0.1,
-    }).encode("utf-8")
-
-    # Normalize base_url: strip trailing slash, append chat completions path
-    api_url = base_url.rstrip("/") + "/chat/completions"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key}",
-    }
-
-    for attempt in range(MAX_RETRIES):
-        try:
-            req = urllib.request.Request(api_url, data=payload, headers=headers)
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                result = json.loads(resp.read().decode("utf-8"))
-
-            text = result.get("choices", [{}])[0].get("message", {}).get("content", "")
-            # Strip markdown code fences if present
-            text = re.sub(r"^```json\s*", "", text.strip())
-            text = re.sub(r"\s*```$", "", text.strip())
-
-            return json.loads(text)
-
-        except json.JSONDecodeError:
-            log.warning("LLM response was not valid JSON, attempt %d", attempt + 1)
-        except urllib.error.HTTPError as e:
-            log.warning("LLM API error: %s %s", e.code, e.read()[:200])
-        except Exception as e:
-            log.warning("LLM call failed: %s", e)
-
-    return None
+    result, _usage = call_llm_json(
+        prompt,
+        api_key=api_key,
+        base_url=base_url,
+        model=model,
+        max_tokens=2048,
+        timeout=60,
+        response_format=False,
+    )
+    if result is None:
+        log.warning("LLM email TODO extraction failed")
+    return result
 
 
 # ── Main extraction pipeline ───────────────────────────────────────────
@@ -233,11 +194,9 @@ def extract_todos_from_emails(
     if dry_run or not rows:
         return []
 
-    api_key = os.environ.get("LLM_API_KEY", "")
-    base_url = os.environ.get("LLM_BASE_URL", "https://api.example.com/v1")
-    model = os.environ.get("LLM_MODEL", "glm-5-turbo")
+    llm_config = get_llm_config()
 
-    if not api_key:
+    if not llm_config.api_key:
         log.warning("No LLM_API_KEY available, skipping TODO extraction")
         return []
 
@@ -300,7 +259,7 @@ def extract_todos_from_emails(
             continue
 
         # Call LLM
-        result = call_llm_extract(content, api_key, base_url, model)
+        result = call_llm_extract(content)
         if not result:
             extracted_uids[uid_key] = {"status": "llm_failed", "at": _now()}
             continue

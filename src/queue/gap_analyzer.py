@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import re
 import sys
@@ -24,10 +25,12 @@ from pathlib import Path
 from typing import Any
 
 KST = timezone(timedelta(hours=9))
+log = logging.getLogger(__name__)
 
 try:
     from src.pipeline.paths import AUDIO_DIR, LOG_DIR, STATE_DIR, TRANSCRIPT_DIR, WORKSPACE
-except Exception:
+except Exception as exc:
+    log.debug("Falling back to local gap analyzer paths: %s", exc)
     WORKSPACE = Path(os.environ.get("KCT_WORKSPACE", Path.cwd()))
     AUDIO_DIR = Path(os.environ.get("KCT_AUDIO_DIR", WORKSPACE / "data" / "audio"))
     TRANSCRIPT_DIR = Path(os.environ.get("KCT_TRANSCRIPT_DIR", WORKSPACE / "output" / "transcripts"))
@@ -89,7 +92,11 @@ class AnalyzerError(RuntimeError):
 def load_json(path: Path, default: Any) -> Any:
     if not path.exists():
         return default
-    return json.loads(path.read_text("utf-8-sig"))
+    try:
+        return json.loads(path.read_text("utf-8-sig"))
+    except (json.JSONDecodeError, OSError) as exc:
+        log.debug("Failed to load JSON %s: %s", path, exc)
+        return default
 
 
 def canonical_transcript_stem(stem: str) -> str:

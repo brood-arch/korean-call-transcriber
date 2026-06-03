@@ -10,12 +10,15 @@ Rules are loaded from a JSON file with hot-reload support (file mtime tracking).
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 # ── Configuration ───────────────────────────────────────────────────────
 # Override via environment variables:
@@ -69,8 +72,8 @@ def load_rules() -> dict[str, Any]:
             current_mtime = RULES_PATH.stat().st_mtime
             if current_mtime <= _rules_mtime:
                 return _rules_cache
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("Failed to stat correction rules %s: %s", RULES_PATH, exc)
 
     # Reload from disk
     if not RULES_PATH.exists():
@@ -79,7 +82,8 @@ def load_rules() -> dict[str, Any]:
 
     try:
         data = json.loads(RULES_PATH.read_text(encoding="utf-8"))
-    except Exception:
+    except Exception as exc:
+        log.debug("Failed to load correction rules %s: %s", RULES_PATH, exc)
         data = DEFAULT_RULES.copy()
 
     if not isinstance(data, dict):
@@ -90,7 +94,8 @@ def load_rules() -> dict[str, Any]:
     _rules_cache = data
     try:
         _rules_mtime = RULES_PATH.stat().st_mtime
-    except Exception:
+    except Exception as exc:
+        log.debug("Failed to stat correction rules after load %s: %s", RULES_PATH, exc)
         _rules_mtime = 0.0
 
     return data
@@ -185,8 +190,8 @@ def log_event(event: dict[str, Any]) -> None:
             tmp = LOG_PATH.with_suffix(".jsonl.tmp")
             tmp.write_text("\n".join(keep_lines) + "\n", encoding="utf-8")
             tmp.replace(LOG_PATH)
-    except Exception:
-        pass
+    except Exception as exc:
+        log.warning("Log rotation failed: %s", exc)
 
     line = json.dumps(event, ensure_ascii=False) + "\n"
     for attempt in range(3):

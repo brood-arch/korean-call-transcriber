@@ -31,14 +31,19 @@ Usage:
 from __future__ import annotations
 
 import json
+import logging
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
-KST = timezone(timedelta(hours=9))
+from src.config import STATE_DIR
+from src.pipeline.utils import safe_save_json
 
-_STATE_DIR = Path(os.environ.get("KCT_STATE_DIR", "state"))
+KST = timezone(timedelta(hours=9))
+log = logging.getLogger(__name__)
+
+_STATE_DIR = Path(os.environ.get("KCT_STATE_DIR", str(STATE_DIR)))
 GRAPH_FILE = _STATE_DIR / "knowledge_graph.json"
 
 # Relation types
@@ -69,8 +74,8 @@ class KnowledgeGraph:
                 data = json.loads(self.graph_path.read_text(encoding="utf-8"))
                 self.nodes = data.get("nodes", {})
                 self.edges = data.get("edges", [])
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("Failed to load knowledge graph %s: %s", self.graph_path, exc)
 
     def save(self) -> None:
         """Save graph to disk atomically."""
@@ -84,9 +89,7 @@ class KnowledgeGraph:
                 "edges": len(self.edges),
             },
         }
-        tmp = self.graph_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(self.graph_path)
+        safe_save_json(self.graph_path, data, origin="knowledge_graph")
 
     def add_node(self, node_id: str, node_type: str, label: str, **meta) -> None:
         """Add or update a node in the graph.

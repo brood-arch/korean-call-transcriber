@@ -51,7 +51,8 @@ def get_audio_duration(path):
                 m = re.search(r"Duration:\s*(\d+):(\d+):(\d+\.\d+)", r.stderr)
                 if m:
                     return int(m.group(1))*3600 + int(m.group(2))*60 + float(m.group(3))
-        except Exception:
+        except Exception as exc:
+            print(f"{cmd_name} duration probe failed: {exc}", file=sys.stderr)
             continue
     return 0.0
 
@@ -145,12 +146,14 @@ def transcribe_file(audio_path, model_path, compute_type, language, beam_size, o
         "segments": len(seg_rows),
     }
 
-    # Write outputs
+    # Write outputs (atomic: write to tmp then rename)
     segments_file = Path(output_dir) / f"{stem}.segments.json"
     meta_file = Path(output_dir) / f"{stem}.meta.json"
 
-    segments_file.write_text(json.dumps(seg_rows, ensure_ascii=False, indent=2), encoding="utf-8")
-    meta_file.write_text(json.dumps(quality_meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    for target, payload in [(segments_file, seg_rows), (meta_file, quality_meta)]:
+        tmp = target.with_suffix(".tmp")
+        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(target)
 
     print(f"OK: {stem} — {len(seg_rows)} segments, {duration:.0f}s", flush=True)
     return 0

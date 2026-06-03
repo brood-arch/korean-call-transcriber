@@ -12,14 +12,18 @@ This module is a compatibility shim. New code should use paths.py directly:
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 
 def is_wsl() -> bool:
     try:
         return os.name != "nt" and "microsoft" in Path("/proc/version").read_text(errors="ignore").lower()
-    except Exception:
+    except Exception as exc:
+        log.debug("WSL detection failed: %s", exc)
         return False
 
 
@@ -81,7 +85,8 @@ def _load_paths() -> dict:
     if PATHS_JSON.exists():
         try:
             return json.loads(PATHS_JSON.read_text(encoding="utf-8"))
-        except Exception:
+        except Exception as exc:
+            log.debug("Failed to load paths config %s: %s", PATHS_JSON, exc)
             return {}
     return {}
 
@@ -94,26 +99,40 @@ _WIN_CFG = _CFG.get("windows", {})
 
 
 def get_path(key: str, default: str | Path | None = None, *, env: str | None = None) -> Path:
-    raw = os.environ.get(env or key.upper()) or _PLATFORM_CFG.get(key) or default
+    env_name = env or key.upper()
+    canonical = f"KCT_{env_name}" if not env_name.startswith("KCT_") else env_name
+    raw = os.environ.get(canonical)
+    if raw is None and env_name != canonical:
+        raw = os.environ.get(env_name)
+        if raw is not None:
+            log.warning("Environment variable %s is deprecated; use %s instead", env_name, canonical)
+    raw = raw or _PLATFORM_CFG.get(key) or default
     if raw is None:
         raise KeyError(f"missing path config: {key}")
     return native_path(raw)
 
 
 def get_windows_path(key: str, default: str | Path | None = None, *, env: str | None = None) -> str:
-    raw = os.environ.get(env or key.upper()) or _WIN_CFG.get(key) or default
+    env_name = env or key.upper()
+    canonical = f"KCT_{env_name}" if not env_name.startswith("KCT_") else env_name
+    raw = os.environ.get(canonical)
+    if raw is None and env_name != canonical:
+        raw = os.environ.get(env_name)
+        if raw is not None:
+            log.warning("Environment variable %s is deprecated; use %s instead", env_name, canonical)
+    raw = raw or _WIN_CFG.get(key) or default
     if raw is None:
         raise KeyError(f"missing path config: {key}")
     return windows_path(raw)
 
 
 # ── Exported constants (backward-compatible with prior pipeline_paths API) ─
-TRANSCRIPT_DIR = get_path("transcript_dir", os.environ.get("KCT_TRANSCRIPT_DIR", "output/transcripts"), env="TRANSCRIPT_DIR")
-AUDIO_DIR = get_path("audio_dir", os.environ.get("KCT_AUDIO_DIR", "data/audio"), env="AUDIO_DIR")
+TRANSCRIPT_DIR = get_path("transcript_dir", "output/transcripts", env="TRANSCRIPT_DIR")
+AUDIO_DIR = get_path("audio_dir", "data/audio", env="AUDIO_DIR")
 OBSIDIAN_VAULT = get_path("obsidian_vault", "output/obsidian", env="OBSIDIAN_VAULT")
 CHROMA_INDEX_DIR = get_path("chroma_index_dir", TRANSCRIPT_DIR / "chroma_index", env="CHROMA_INDEX_DIR")
-STATE_DIR = get_path("state_dir", os.environ.get("KCT_STATE_DIR", WORKSPACE / "state"), env="STATE_DIR")
-LOG_DIR = get_path("log_dir", os.environ.get("KCT_LOG_DIR", WORKSPACE / "logs"), env="LOG_DIR")
+STATE_DIR = get_path("state_dir", WORKSPACE / "state", env="STATE_DIR")
+LOG_DIR = get_path("log_dir", WORKSPACE / "logs", env="LOG_DIR")
 WINDOWS_PYTHON = get_windows_path("python", "python", env="WINDOWS_PYTHON")
 WHISPERX_PYTHON = get_windows_path("whisperx_python", r".\tools\whisperx-venv\Scripts\python.exe", env="WHISPERX_PYTHON")
 HF_TOKEN_FILE = get_windows_path("hf_token_file", "", env="HF_TOKEN_FILE")

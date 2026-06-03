@@ -37,8 +37,8 @@ def log(msg: str) -> None:
         LOG.parent.mkdir(parents=True, exist_ok=True)
         with open(LOG, "a", encoding="utf-8") as f:
             f.write(line + "\n")
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"{ts} WARN log write failed: {exc}", file=sys.stderr, flush=True)
     print(line, flush=True)
 
 
@@ -53,8 +53,8 @@ def get_gpu_free_mb() -> int:
         )
         if r.returncode == 0:
             return int(r.stdout.strip().split("\n")[0])
-    except Exception:
-        pass
+    except Exception as exc:
+        log(f"GPU memory query failed: {exc}")
     return -1
 
 

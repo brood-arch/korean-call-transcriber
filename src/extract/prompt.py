@@ -4,7 +4,10 @@ Provides the hardcoded unified-extraction prompt and optional
 Langfuse-based prompt loading.
 """
 
+import logging
 import os
+
+log = logging.getLogger(__name__)
 
 # --- Unified extraction prompt ---
 UNIFIED_EXTRACT_PROMPT = """다음 통화 전사본에서 8가지를 한꺼번에 추출해줘:
@@ -152,10 +155,11 @@ def get_prompt():
                 compiled = lf_prompt.compile()
                 if compiled and len(compiled) > 100:
                     return compiled
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("Langfuse prompt fetch failed: %s", exc)
         return UNIFIED_EXTRACT_PROMPT
-    except Exception:
+    except Exception as exc:
+        log.debug("Prompt setup failed: %s", exc)
         return UNIFIED_EXTRACT_PROMPT
 
 

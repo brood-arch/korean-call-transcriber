@@ -27,6 +27,7 @@ import email as email_lib
 import email.header
 import imaplib
 import json
+import logging
 import os
 import re
 import sys
@@ -34,6 +35,12 @@ from datetime import timedelta, timezone
 from email.message import Message
 from pathlib import Path
 from typing import Optional
+
+from src.config import NAVER_MAIL_ADDRESS, NAVER_MAIL_PASSWORD
+from src.config import STATE_DIR as CONFIG_STATE_DIR
+from src.pipeline.utils import safe_save_json
+
+log = logging.getLogger(__name__)
 
 # ── Configuration ──────────────────────────────────────────────────────
 
@@ -43,13 +50,13 @@ IMAP_HOST = os.environ.get("NAVER_MAIL_HOST", "imap.naver.com")
 IMAP_PORT = int(os.environ.get("NAVER_MAIL_PORT", "993"))
 DEFAULT_FOLDERS = ['INBOX', '"Sent Messages"']
 LIMIT = int(os.environ.get("NAVER_MAIL_LIMIT", "100"))
-STATE_DIR = Path(os.environ.get("NAVER_MAIL_STATE_DIR", "state/naver_mail"))
+STATE_DIR = Path(os.environ.get("NAVER_MAIL_STATE_DIR", str(CONFIG_STATE_DIR / "naver_mail")))
 
 
 def _get_credentials() -> tuple[str, str]:
     """Read Naver Mail credentials from environment variables."""
-    addr = os.environ.get("NAVER_MAIL_ADDRESS", "")
-    passwd = os.environ.get("NAVER_MAIL_PASSWORD", "")
+    addr = os.environ.get("NAVER_MAIL_ADDRESS", NAVER_MAIL_ADDRESS)
+    passwd = os.environ.get("NAVER_MAIL_PASSWORD", NAVER_MAIL_PASSWORD)
     if not addr or not passwd:
         raise EnvironmentError(
             "Set NAVER_MAIL_ADDRESS and NAVER_MAIL_PASSWORD environment variables."
@@ -106,15 +113,17 @@ def load_state(state_dir: Path) -> dict:
     """Load processed UID state from JSON file."""
     state_file = state_dir / "processed_uids.json"
     if state_file.exists():
-        return json.loads(state_file.read_text(encoding="utf-8"))
+        try:
+            return json.loads(state_file.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as exc:
+            log.debug("Failed to load Naver mail state %s: %s", state_file, exc)
     return {}
 
 
 def save_state(state_dir: Path, state: dict) -> None:
     """Save processed UID state to JSON file."""
-    state_dir.mkdir(parents=True, exist_ok=True)
     state_file = state_dir / "processed_uids.json"
-    state_file.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    safe_save_json(state_file, state, origin="naver_mail")
 
 
 def parse_message(raw: bytes) -> dict:

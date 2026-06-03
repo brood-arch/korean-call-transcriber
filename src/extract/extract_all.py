@@ -17,13 +17,14 @@ Config:
 
 import argparse
 import json
-import os
+import logging
 import sys
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from src.config import EXIT_CONFIG, EXIT_OK, EXIT_PARTIAL, TRANSCRIPT_DIR
 from src.pipeline.utils import compress_transcript, fallback_summary
 
 from .client import call_llm_extract, get_llm_config
@@ -52,26 +53,18 @@ def _get_fast_score():
     global _fast_score_fn
     if _fast_score_fn is None:
         try:
-            from .signal_detector import fast_score_transcript
+            from src.knowledge.signal_detector import fast_score_transcript
             _fast_score_fn = fast_score_transcript
         except ImportError:
-            try:
-                from src.knowledge.signal_detector import fast_score_transcript
-                _fast_score_fn = fast_score_transcript
-            except ImportError:
-                def default_fast_score(text):
-                    return {"score": 1.0, "band": "definite_keep", "should_process": True, "signals": {}, "drop_reason": None}
-                _fast_score_fn = default_fast_score
+            def default_fast_score(text):
+                return {"score": 1.0, "band": "definite_keep", "should_process": True, "signals": {}, "drop_reason": None}
+            _fast_score_fn = default_fast_score
     return _fast_score_fn
 
 KST = timezone(timedelta(hours=9))
 
 # Pipeline config
-try:
-    from pipeline_paths import TRANSCRIPT_DIR
-    DEFAULT_BASE_DIR = str(TRANSCRIPT_DIR)
-except Exception:
-    DEFAULT_BASE_DIR = os.environ.get("TRANSCRIPT_DIR", "./data/transcripts")
+DEFAULT_BASE_DIR = str(TRANSCRIPT_DIR)
 DEFAULT_STATE_DIR = WORKSPACE / "memory" / "state" / "integrated_extraction"
 DEFAULT_BATCH_SIZE = 5            # files per API run (reduced for ZAI rate limit stability)
 MAX_CONTENT_CHARS = 12000        # P1-4: GLM ctx 기준 여유 있음
@@ -89,6 +82,7 @@ class IntegratedPipeline:
         self.state_dir.mkdir(parents=True, exist_ok=True)
         self.batch_size = args.batch_size
         self.api_delay = args.api_delay
+        self.json_output = getattr(args, "json", False)
         self.today_only = getattr(args, 'today', False)
         self.start_batch_override = getattr(args, 'start_batch', 0)  # P2-C8
         self.run_id = f"run_{datetime.now(KST).strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
@@ -133,7 +127,7 @@ class IntegratedPipeline:
         api_key = get_llm_config()["api_key"]
         if not api_key:
             print("ERROR: LLM_API_KEY environment variable not set.")
-            sys.exit(1)
+            sys.exit(EXIT_CONFIG)
 
         files = self.get_transcription_files()
         total_files = len(files)
@@ -170,8 +164,8 @@ class IntegratedPipeline:
                             if existing.get("status") == "done":
                                 print(f"  [{batch_idx:04d}] SKIP (already done)")
                                 continue
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            logging.debug("Failed to inspect existing batch %s: %s", batch_file, exc)
 
                 print(f"  [{batch_idx:04d}/{total_batches-1}] Processing {len(batch_files)} files...")
 
@@ -340,7 +334,9 @@ class IntegratedPipeline:
         if self.stats.get("new_todos", 0) > 0 and not self._telegram_notified_new_todos:
             print_todo_alert()
 
-        sys.exit(1 if self.stats["errors"] > 0 else 0)
+        if self.json_output:
+            print(json.dumps({"run_id": self.run_id, "stats": self.stats}, ensure_ascii=False, sort_keys=True))
+        sys.exit(EXIT_PARTIAL if self.stats["errors"] > 0 else EXIT_OK)
 
 
 def dry_run(args):
@@ -400,7 +396,12 @@ def main():
     parser.add_argument("--start-batch", type=int, default=0)
     parser.add_argument("--today", action="store_true", help="Only process today's files")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--verbose", action="store_true", help="Enable debug logging")
+    parser.add_argument("--json", action="store_true", help="Print machine-readable summary JSON")
     args = parser.parse_args()
+
+    if args.verbose:
+        logging.basicConfig(level=logging.DEBUG, format="%(levelname)s:%(name)s:%(message)s")
 
     if args.dry_run:
         dry_run(args)

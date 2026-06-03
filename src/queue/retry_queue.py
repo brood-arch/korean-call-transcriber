@@ -32,7 +32,6 @@ import os
 import shutil
 import subprocess
 import sys
-import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -40,11 +39,25 @@ from typing import Any, Callable, Iterable
 KST = timezone(timedelta(hours=9))
 
 try:
-    from src.pipeline.paths import LOG_DIR, STATE_DIR, WORKSPACE
+    from src.pipeline.paths import LOG_DIR, STATE_DIR, WORKSPACE, is_wsl
+    from src.pipeline.utils import redact_sensitive_text, safe_write_text
 except Exception:
     WORKSPACE = Path(os.environ.get("KCT_WORKSPACE", Path.cwd()))
     STATE_DIR = Path(os.environ.get("KCT_STATE_DIR", WORKSPACE / "state"))
     LOG_DIR = Path(os.environ.get("KCT_LOG_DIR", WORKSPACE / "logs"))
+
+    def is_wsl() -> bool:
+        return False
+
+    def redact_sensitive_text(text: str, limit: int | None = None) -> str:
+        value = str(text or "")
+        return value[-limit:] if limit is not None else value
+
+    def safe_write_text(path: Path, content: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(content, encoding="utf-8", newline="\n")
+        tmp.replace(path)
 
 DEFAULT_QUEUE_PATH = STATE_DIR / "transcription_retry_queue.jsonl"
 DEFAULT_REPORT_PATH = WORKSPACE / "reports" / "transcription_health_taxonomy.json"
@@ -78,20 +91,6 @@ def parse_iso(value: str) -> datetime:
 
 def coerce_now(value: str | None = None) -> str:
     return value or now_iso()
-
-
-def safe_write_text(path: Path, content: str) -> None:
-    """Atomic same-directory write via temp file + replace."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-    tmp.write_text(content, encoding="utf-8", newline="\n")
-    try:
-        tmp.replace(path)
-    except Exception:
-        try:
-            tmp.unlink(missing_ok=True)
-        finally:
-            raise
 
 
 def append_jsonl(path: Path, row: dict[str, Any]) -> None:
@@ -258,10 +257,7 @@ def command_for_entry(entry: dict[str, Any], workspace: Path, running_on_wsl: bo
 
     # Detect whether we are running under WSL or native Windows.
     if running_on_wsl is None:
-        running_on_wsl = (
-            os.path.exists("/proc/version")
-            and "microsoft" in open("/proc/version", errors="ignore").read().lower()
-        )
+        running_on_wsl = is_wsl()
 
     if action == "transcribe":
         if not source_path:
@@ -297,7 +293,7 @@ def backoff_next_retry(now: str, attempts: int) -> str:
 
 
 def summarize_error(returncode: int, stderr: str, stdout: str) -> str:
-    detail = (stderr or stdout or "").strip().splitlines()
+    detail = redact_sensitive_text(stderr or stdout or "").strip().splitlines()
     tail = detail[-1] if detail else "no output"
     return f"exit {returncode}: {tail}"[:500]
 
@@ -309,7 +305,13 @@ def mark_success(entry: dict[str, Any], *, now: str, argv: list[str], stdout: st
     entry["next_retry_at"] = None
     entry["terminal_failure"] = False
     entry["updated_at"] = now
-    entry.setdefault("history", []).append({"at": now, "outcome": "succeeded", "argv": argv, "stdout_tail": stdout[-1000:], "stderr_tail": stderr[-1000:]})
+    entry.setdefault("history", []).append({
+        "at": now,
+        "outcome": "succeeded",
+        "argv": argv,
+        "stdout_tail": redact_sensitive_text(stdout, limit=1000),
+        "stderr_tail": redact_sensitive_text(stderr, limit=1000),
+    })
 
 
 def mark_failure(entry: dict[str, Any], *, now: str, argv: list[str], error: str) -> None:
@@ -404,11 +406,11 @@ def run_worker(
                 err = summarize_error(rc, stderr, stdout)
                 mark_failure(entry, now=ts, argv=argv, error=err)
                 result["failed"] += 1
-                append_jsonl(log_path, {"at": ts, "event": "attempt_failed", "queue_id": entry.get("queue_id"), "returncode": rc, "error": err})
+                append_jsonl(log_path, {"at": ts, "event": "attempt_failed", "queue_id": entry.get("queue_id"), "returncode": rc, "error": redact_sensitive_text(err, limit=500)})
         except Exception as exc:
-            mark_failure(entry, now=ts, argv=argv, error=repr(exc))
+            mark_failure(entry, now=ts, argv=argv, error=redact_sensitive_text(repr(exc), limit=500))
             result["failed"] += 1
-            append_jsonl(log_path, {"at": ts, "event": "attempt_exception", "queue_id": entry.get("queue_id"), "error": repr(exc)})
+            append_jsonl(log_path, {"at": ts, "event": "attempt_exception", "queue_id": entry.get("queue_id"), "error": redact_sensitive_text(repr(exc), limit=500)})
         write_queue(queue_path, entries)
     return result
 

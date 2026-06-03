@@ -16,10 +16,15 @@ from __future__ import annotations
 
 import email as email_lib
 import imaplib
+import logging
 import os
 from datetime import datetime
 from email.header import decode_header
 from typing import Optional
+
+from src.config import GMAIL_ADDRESS, GMAIL_APP_PASSWORD
+
+log = logging.getLogger(__name__)
 
 # Gmail IMAP settings
 IMAP_SERVER = "imap.gmail.com"
@@ -50,8 +55,8 @@ def _get_credentials() -> tuple[str, str]:
     Raises:
         EnvironmentError: If either variable is unset.
     """
-    addr = os.environ.get("GMAIL_ADDRESS", "")
-    pw = os.environ.get("GMAIL_APP_PASSWORD", "")
+    addr = os.environ.get("GMAIL_ADDRESS", GMAIL_ADDRESS)
+    pw = os.environ.get("GMAIL_APP_PASSWORD", GMAIL_APP_PASSWORD)
     if not addr or not pw:
         raise EnvironmentError(
             "GMAIL_ADDRESS and GMAIL_APP_PASSWORD environment variables must be set"
@@ -122,14 +127,14 @@ def get_email_body(msg) -> str:
                 try:
                     payload = part.get_payload(decode=True)
                     body = payload.decode("utf-8", errors="ignore")
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.debug("Failed to decode multipart text/plain body: %s", exc)
     else:
         try:
             payload = msg.get_payload(decode=True)
             body = payload.decode("utf-8", errors="ignore")
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("Failed to decode singlepart email body: %s", exc)
     return body
 
 

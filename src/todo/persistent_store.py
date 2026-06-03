@@ -103,7 +103,8 @@ def _load_completed_titles() -> set:
     try:
         with open(COMPLETED_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-    except Exception:
+    except Exception as exc:
+        log.warning("Failed to parse %s, treating completed set as empty: %s", COMPLETED_FILE, exc)
         return set()
 
     if isinstance(data, list):
