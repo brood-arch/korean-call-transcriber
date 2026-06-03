@@ -22,3 +22,11 @@ chromadb>=0.4.0
 
 # Audio processing
 ffmpeg-python>=0.2.0
+
+# Minions job queue (optional, Postgres backend)
+psycopg2-binary>=2.9.0
+
+# Email IMAP (standard library imaplib — no extra dependency needed)
+# Google Calendar (requires google-auth + google-auth-oauthlib)
+# google-auth>=2.0.0
+# google-auth-oauthlib>=1.0.0

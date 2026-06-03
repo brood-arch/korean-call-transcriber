@@ -1,0 +1,395 @@
+#!/usr/bin/env python3
+"""
+Email TODO Extraction — Extract action items from archived emails.
+
+Runs after new emails are staged. Only processes NEW emails (not retroactive).
+Filters out promotional/advertising emails, excluded senders, and auto-replies.
+
+Uses an OpenAI-compatible LLM API for extraction (configured via env vars).
+
+Environment variables:
+    LLM_API_KEY      — API key for the LLM endpoint
+    LLM_BASE_URL     — OpenAI-compatible API base URL
+    LLM_MODEL        — Model name (default: glm-5-turbo)
+    EMAIL_TODO_STATE — Path to extraction state JSON file
+    EMAIL_TODO_EXCLUSIONS — Path to sender exclusion list JSON file
+"""
+from __future__ import annotations
+
+import json
+import logging
+import os
+import re
+import urllib.error
+import urllib.request
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
+from typing import Any
+
+log = logging.getLogger("email_todo_extract")
+
+# ── Config (all via env vars) ───────────────────────────────────────────
+EXTRACT_STATE_PATH = Path(os.environ.get(
+    "EMAIL_TODO_STATE",
+    "state/email_todo_state.json",
+))
+EXCLUSION_PATH = Path(os.environ.get(
+    "EMAIL_TODO_EXCLUSIONS",
+    "state/email_todo_exclusions.json",
+))
+
+KST = timezone(timedelta(hours=9))
+
+
+def _now() -> str:
+    return datetime.now(KST).isoformat()
+
+
+# ── Promotional email detection ─────────────────────────────────────────
+PROMO_SUBJECT_PATTERNS = [
+    r"\[광고\]", r"\[AD\]", r"\[EVENT\]", r"\[마케팅\]",
+    r"\[프로모션\]", r"\[할인\]", r"\[SALE\]", r"\[ANNOUNCE\]",
+    r"뉴스레터", r"newsletter", r"이벤트 안내", r"특가", r"한정.*할인",
+    r"수신거부", r"unsubscribe", r"수신동의", r"opt.?out",
+    r"쿠폰", r"coupon", r"혜택", r"event 안내",
+    r"무료.*체험", r"free trial", r"체험판",
+    r"업데이트 소식$", r"update$",
+]
+
+PROMO_BODY_KEYWORDS = [
+    "수신거부", "unsubscribe", "수신을 원치 않으", "이 메일은 발신전용",
+    "광고메일", "promotional email", "마케팅 메일",
+]
+
+
+# ── Exclusion list management ───────────────────────────────────────────
+def load_exclusions() -> dict:
+    """Load sender exclusion list. Format: {"senders": ["addr@example.com", ...]}"""
+    if not EXCLUSION_PATH.exists():
+        return {"senders": []}
+    try:
+        return json.loads(EXCLUSION_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {"senders": []}
+
+
+def save_exclusions(excl: dict) -> None:
+    """Save exclusion list to disk."""
+    EXCLUSION_PATH.parent.mkdir(parents=True, exist_ok=True)
+    EXCLUSION_PATH.write_text(
+        json.dumps(excl, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def add_exclusion(addr: str) -> dict:
+    """Add a sender to the exclusion list."""
+    excl = load_exclusions()
+    addr = addr.lower().strip()
+    if addr not in excl["senders"]:
+        excl["senders"].append(addr)
+        save_exclusions(excl)
+    return excl
+
+
+def remove_exclusion(addr: str) -> dict:
+    """Remove a sender from the exclusion list."""
+    excl = load_exclusions()
+    addr = addr.lower().strip()
+    excl["senders"] = [a for a in excl["senders"] if a != addr]
+    save_exclusions(excl)
+    return excl
+
+
+# ── Promotional email filter ────────────────────────────────────────────
+def is_promotional(subject: str, body_preview: str) -> bool:
+    """Check if an email is promotional/advertising."""
+    text = f"{subject} {body_preview[:500]}"
+    for pat in PROMO_SUBJECT_PATTERNS:
+        if re.search(pat, text, re.I):
+            return True
+    lower = body_preview[:500].lower()
+    for kw in PROMO_BODY_KEYWORDS:
+        if kw.lower() in lower:
+            return True
+    return False
+
+
+# ── State management ────────────────────────────────────────────────────
+def load_state() -> dict:
+    """Load extraction state (tracks which UIDs have been processed)."""
+    if not EXTRACT_STATE_PATH.exists():
+        return {"extracted_uids": {}, "last_extraction": None}
+    try:
+        return json.loads(EXTRACT_STATE_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {"extracted_uids": {}, "last_extraction": None}
+
+
+def save_state(state: dict) -> None:
+    """Save extraction state to disk."""
+    EXTRACT_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    EXTRACT_STATE_PATH.write_text(
+        json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+# ── LLM extraction ─────────────────────────────────────────────────────
+EXTRACTION_PROMPT = """Extract action items (TODOs) from the following email content.
+
+Rules:
+1. Only extract items that require action from the recipient (skip info-only, greetings)
+2. Each TODO must be specific and actionable
+3. Priority: high (urgent/deadline approaching), medium (normal), low (reference)
+4. Include both requests from sender and commitments from recipient
+5. If a date/deadline is mentioned, include it
+6. Respond in JSON only (no other text)
+
+Response format:
+{
+  "has_actionable_items": true/false,
+  "todos": [
+    {
+      "title": "One-line TODO summary",
+      "priority": "high/medium/low",
+      "details": "Details if needed",
+      "due_date": "YYYY-MM-DD or null",
+      "requested_by": "Requester name"
+    }
+  ]
+}
+
+Email content:
+{content}"""
+
+MAX_CONTENT_CHARS = 8000
+MAX_RETRIES = 2
+
+
+def call_llm_extract(content: str, api_key: str, base_url: str, model: str) -> dict | None:
+    """Call OpenAI-compatible LLM to extract TODOs from email content.
+
+    Args:
+        content: Email text content.
+        api_key: API key for authentication.
+        base_url: OpenAI-compatible API base URL.
+        model: Model name to use.
+
+    Returns:
+        Parsed JSON dict from LLM response, or None on failure.
+    """
+    prompt = EXTRACTION_PROMPT.replace("{content}", content[:MAX_CONTENT_CHARS], 1)
+
+    payload = json.dumps({
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 2048,
+        "temperature": 0.1,
+    }).encode("utf-8")
+
+    # Normalize base_url: strip trailing slash, append chat completions path
+    api_url = base_url.rstrip("/") + "/chat/completions"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+    }
+
+    for attempt in range(MAX_RETRIES):
+        try:
+            req = urllib.request.Request(api_url, data=payload, headers=headers)
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+
+            text = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+            # Strip markdown code fences if present
+            text = re.sub(r"^```json\s*", "", text.strip())
+            text = re.sub(r"\s*```$", "", text.strip())
+
+            return json.loads(text)
+
+        except json.JSONDecodeError:
+            log.warning("LLM response was not valid JSON, attempt %d", attempt + 1)
+        except urllib.error.HTTPError as e:
+            log.warning("LLM API error: %s %s", e.code, e.read()[:200])
+        except Exception as e:
+            log.warning("LLM call failed: %s", e)
+
+    return None
+
+
+# ── Main extraction pipeline ───────────────────────────────────────────
+def extract_todos_from_emails(
+    rows: list[dict[str, Any]],
+    dry_run: bool = False,
+) -> list[dict[str, Any]]:
+    """Extract TODOs from newly archived emails.
+
+    Args:
+        rows: List of email row dicts with 'meta' and 'staged' path keys.
+        dry_run: If True, don't call LLM or save state.
+
+    Returns:
+        List of extracted TODO dicts (with source metadata added).
+    """
+    if dry_run or not rows:
+        return []
+
+    api_key = os.environ.get("LLM_API_KEY", "")
+    base_url = os.environ.get("LLM_BASE_URL", "https://api.example.com/v1")
+    model = os.environ.get("LLM_MODEL", "glm-5-turbo")
+
+    if not api_key:
+        log.warning("No LLM_API_KEY available, skipping TODO extraction")
+        return []
+
+    excl = load_exclusions()
+    excluded_addrs = {a.lower() for a in excl.get("senders", [])}
+    state = load_state()
+    extracted_uids = state.setdefault("extracted_uids", {})
+
+    all_todos: list[dict[str, Any]] = []
+
+    for row in rows:
+        meta = row.get("meta", {})
+        staged_path = row.get("staged", "")
+        folder = row.get("folder", "INBOX")
+
+        # Skip sent mail (we wrote it, no action needed from us)
+        if folder == "Sent Messages":
+            continue
+
+        # Get sender
+        from_raw = meta.get("from", "")
+        from_addr = ""
+        email_match = re.search(r"<([^>]+)>", from_raw)
+        if email_match:
+            from_addr = email_match.group(1).lower().strip()
+        else:
+            from_addr = from_raw.lower().strip()
+
+        from_name = ""
+        name_match = re.match(r'["\']?(.+?)["\']?\s*<', from_raw)
+        if name_match:
+            from_name = name_match.group(1).strip().strip('"').strip("'")
+        else:
+            from_name = from_addr.split("@")[0]
+
+        # Skip excluded senders
+        if from_addr in excluded_addrs:
+            log.debug("Skipping excluded sender: %s", from_addr)
+            continue
+
+        # Check UID dedup
+        uid = meta.get("uid", "")
+        uid_key = f"{folder}:{uid}"
+        if uid_key in extracted_uids:
+            continue
+
+        # Read staged file content
+        staged = Path(staged_path) if staged_path else None
+        if not staged or not staged.exists():
+            continue
+        content = staged.read_text(encoding="utf-8", errors="replace")
+
+        subject = meta.get("subject", "(no subject)")
+
+        # Skip promotional emails
+        body_preview = content[:500]
+        if is_promotional(subject, body_preview):
+            log.debug("Skipping promotional email: %s", subject[:50])
+            extracted_uids[uid_key] = {"status": "promo_skipped", "at": _now()}
+            continue
+
+        # Call LLM
+        result = call_llm_extract(content, api_key, base_url, model)
+        if not result:
+            extracted_uids[uid_key] = {"status": "llm_failed", "at": _now()}
+            continue
+
+        if not result.get("has_actionable_items"):
+            extracted_uids[uid_key] = {"status": "no_actions", "at": _now()}
+            continue
+
+        # Collect TODOs
+        for todo in result.get("todos", []):
+            todo_entry = {
+                "title": todo.get("title", "").strip(),
+                "priority": todo.get("priority", "medium"),
+                "details": todo.get("details", ""),
+                "due_date": todo.get("due_date"),
+                "requested_by": todo.get("requested_by", from_name),
+                "source": "email",
+                "source_email": from_addr,
+                "source_name": from_name,
+                "email_subject": subject,
+                "email_uid": uid_key,
+                "email_date": meta.get("date", ""),
+                "added_at": _now(),
+            }
+            if todo_entry["title"]:
+                all_todos.append(todo_entry)
+
+        extracted_uids[uid_key] = {
+            "status": "extracted",
+            "todo_count": len(result.get("todos", [])),
+            "at": _now(),
+        }
+
+    # Save state
+    state["last_extraction"] = _now()
+    save_state(state)
+
+    if all_todos:
+        log.info("Extracted %d TODOs from %d emails", len(all_todos), len(rows))
+
+    return all_todos
+
+
+# ── CLI interface ───────────────────────────────────────────────────────
+if __name__ == "__main__":
+    import argparse
+
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
+    parser = argparse.ArgumentParser(description="Email TODO extraction")
+    sub = parser.add_subparsers(dest="command")
+
+    exc = sub.add_parser("exclude", help="Add sender to exclusion list")
+    exc.add_argument("addr", help="Email address to exclude")
+
+    inc = sub.add_parser("include", help="Remove sender from exclusion list")
+    inc.add_argument("addr", help="Email address to include again")
+
+    sub.add_parser("list-exclusions", help="List excluded senders")
+    sub.add_parser("status", help="Show extraction state")
+
+    args = parser.parse_args()
+
+    if args.command == "exclude":
+        result = add_exclusion(args.addr)
+        print(f"Excluded: {args.addr}")
+        print(f"Total exclusions: {len(result['senders'])}")
+    elif args.command == "include":
+        result = remove_exclusion(args.addr)
+        print(f"Included: {args.addr}")
+        print(f"Total exclusions: {len(result['senders'])}")
+    elif args.command == "list-exclusions":
+        excl = load_exclusions()
+        if excl["senders"]:
+            print(f"Excluded senders ({len(excl['senders'])}):")
+            for a in excl["senders"]:
+                print(f"  {a}")
+        else:
+            print("No excluded senders.")
+    elif args.command == "status":
+        state = load_state()
+        total = len(state.get("extracted_uids", {}))
+        statuses: dict[str, int] = {}
+        for v in state.get("extracted_uids", {}).values():
+            s = v.get("status", "unknown")
+            statuses[s] = statuses.get(s, 0) + 1
+        print(f"Extracted UIDs: {total}")
+        for s, c in sorted(statuses.items()):
+            print(f"  {s}: {c}")
+        print(f"Last extraction: {state.get('last_extraction', 'never')}")
+    else:
+        parser.print_help()

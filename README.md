@@ -11,6 +11,16 @@ Korean phone call transcription pipeline with Whisper + speaker diarization, aut
 - **📊 Gap Analyzer** — Deterministic pipeline health check with cause taxonomy
 - **🔄 Retry Queue** — JSONL-based atomic retry queue with exponential backoff
 - **📓 Obsidian Sync** — Automatic transcript → markdown conversion with counterparty indexing
+- **📧 Gmail Classifier** — Auto-classify inbox emails (ads → trash, important → highlight)
+- **📋 Email TODO Extract** — Extract action items from incoming emails with LLM
+- **📅 Calendar Integration** — Google Calendar event checking via OAuth2
+- **💬 SMS Pipeline** — Placeholder module for SMS-to-transcription integration
+- **📮 Naver Mail Archiver** — IMAP-based Naver Mail archiver with structured JSON output
+- **✅ Persistent TODO Store** — Jaccard fuzzy-dedup, same-source merge, completed tracking
+- **🧠 Knowledge Graph** — Entity relationship extraction and traversal (counterparty ↔ TODO ↔ event)
+- **📡 Signal Detector** — 3-band fast scoring + idea/entity extraction from any text
+- **⚙️ Minions Queue** — Postgres-backed durable job queue with fan-out, DAG, and crash recovery
+- **🔍 State Validator** — Automated state file existence, staleness, and integrity checks
 
 ## Architecture
 
@@ -32,6 +42,33 @@ Korean phone call transcription pipeline with Whisper + speaker diarization, aut
                         │  ├─ products      │────▶│  Obsidian Vault  │
                         │  └─ risks         │     │  (sync)          │
                         └──────────────────┘     └──────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│  Extended Pipeline (v0.3.0)                                         │
+│                                                                     │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
+│  │ Gmail        │  │ Email TODO   │  │ Calendar     │              │
+│  │ Classifier   │  │ Extract      │  │ Integration  │              │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘              │
+│         │                 │                  │                      │
+│         ▼                 ▼                  ▼                      │
+│  ┌─────────────────────────────────────────────────────┐           │
+│  │  Persistent TODO Store (Jaccard dedup)              │           │
+│  └──────────────────────────┬──────────────────────────┘           │
+│                             │                                       │
+│         ┌───────────────────┼───────────────────┐                  │
+│         ▼                   ▼                   ▼                  │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
+│  │ Knowledge    │  │ Signal       │  │ State        │              │
+│  │ Graph        │  │ Detector     │  │ Validator    │              │
+│  └──────────────┘  └──────────────┘  └──────────────┘              │
+│                                                                     │
+│  ┌──────────────┐  ┌──────────────┐                                │
+│  │ Minions      │  │ SMS Handler  │                                │
+│  │ Job Queue    │  │ (placeholder)│                                │
+│  │ (Postgres)   │  │              │                                │
+│  └──────────────┘  └──────────────┘                                │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 See [docs/architecture.md](docs/architecture.md) for detailed documentation.
@@ -44,6 +81,7 @@ See [docs/architecture.md](docs/architecture.md) for detailed documentation.
 - CUDA-capable GPU (tested on RTX 3090)
 - ffmpeg in PATH
 - HuggingFace token with pyannote access (for diarization)
+- PostgreSQL 16+ (for Minions job queue — optional)
 
 ### Installation
 
@@ -108,6 +146,99 @@ python -m src.sync.sync_obsidian --dry-run
 python -m src.sync.sync_obsidian --all
 ```
 
+#### 5. Gmail auto-classification
+
+```bash
+# Set GMAIL_ADDRESS and GMAIL_APP_PASSWORD in .env first
+python -m src.integrations.gmail_classifier
+```
+
+#### 6. Email TODO extraction
+
+```bash
+# Manage sender exclusion list
+python -m src.integrations.email_todo_extract exclude "newsletter@example.com"
+python -m src.integrations.email_todo_extract list-exclusions
+python -m src.integrations.email_todo_extract status
+```
+
+#### 7. Calendar integration
+
+```bash
+# Set GCAL_TOKEN_PATH in .env to your OAuth2 token file
+python -m src.integrations.calendar
+```
+
+#### 7.5. Naver Mail archiving
+
+```bash
+# Set NAVER_MAIL_ADDRESS and NAVER_MAIL_PASSWORD in .env first
+# Enable IMAP in Naver Mail web settings
+python -m src.integrations.naver_mail
+
+# Dry run (don't save state)
+python -m src.integrations.naver_mail --dry-run
+
+# Single folder
+python -m src.integrations.naver_mail --folder INBOX --limit 50
+```
+
+#### 8. Persistent TODO management
+
+```bash
+# Check status
+python -m src.todo.persistent_store status
+
+# Sync completed TODOs
+python -m src.todo.persistent_store sync
+```
+
+#### 9. Knowledge graph
+
+```bash
+# Build graph from all state sources
+python -m src.knowledge.graph --build
+
+# Query related nodes
+python -m src.knowledge.graph --query "cp:CompanyName"
+
+# Show statistics
+python -m src.knowledge.graph --stats
+```
+
+#### 10. Signal detection
+
+```bash
+# Fast-score a text (no LLM needed)
+python -m src.knowledge.signal_detector --score "주문 500개 확인해주세요"
+
+# Full signal detection
+python -m src.knowledge.signal_detector "Meeting with Acme about 500 units"
+```
+
+#### 11. Minions job queue (requires PostgreSQL)
+
+```bash
+# Set MINIONS_DB_PASS in .env
+python -m src.pipeline.minions_queue submit sync_transcripts '{"cmd": "python -m src.extract.extract_all"}'
+python -m src.pipeline.minions_queue list
+python -m src.pipeline.minions_queue stats
+python -m src.pipeline.minions_queue work
+```
+
+#### 12. State validation
+
+```bash
+# Check all state files
+python -m src.pipeline.validate_state
+
+# JSON output
+python -m src.pipeline.validate_state --json
+
+# Quiet mode (only show issues)
+python -m src.pipeline.validate_state --quiet
+```
+
 ### Environment Variables
 
 | Variable | Description | Default |
@@ -120,6 +251,25 @@ python -m src.sync.sync_obsidian --all
 | `WHISPER_MODEL` | faster-whisper model | `mobiuslabsgmbh/faster-whisper-large-v3-turbo` |
 | `HF_TOKEN_FILE` | HuggingFace token file path | (empty) |
 | `MY_NAME` | Speaker name for caller ID | `Me` |
+| `GMAIL_ADDRESS` | Gmail address for IMAP login | (empty) |
+| `GMAIL_APP_PASSWORD` | Gmail app-specific password | (empty) |
+| `GCAL_TOKEN_PATH` | Path to Google Calendar OAuth2 token | `state/gcal_token.json` |
+| `EMAIL_TODO_STATE` | Path to email TODO state file | `state/email_todo_state.json` |
+| `EMAIL_TODO_EXCLUSIONS` | Path to sender exclusion list | `state/email_todo_exclusions.json` |
+| `KCT_STATE_DIR` | Base state directory | `state` |
+| `MINIONS_DB_HOST` | Minions Postgres host | `localhost` |
+| `MINIONS_DB_PORT` | Minions Postgres port | `5432` |
+| `MINIONS_DB_NAME` | Minions database name | `minions` |
+| `MINIONS_DB_USER` | Minions database user | `minions` |
+| `MINIONS_DB_PASS` | Minions database password | (required for queue) |
+| `SMS_GATEWAY_URL` | SMS gateway API endpoint | (empty) |
+| `SMS_API_KEY` | SMS gateway API key | (empty) |
+| `NAVER_MAIL_ADDRESS` | Naver email address | (empty) |
+| `NAVER_MAIL_PASSWORD` | Naver mail password or app password | (empty) |
+| `NAVER_MAIL_HOST` | Naver IMAP host | `imap.naver.com` |
+| `NAVER_MAIL_FOLDERS` | Comma-separated IMAP folders | `INBOX,"Sent Messages"` |
+| `NAVER_MAIL_LIMIT` | Max messages per folder per run | `100` |
+| `NAVER_MAIL_STATE_DIR` | State directory for processed UIDs | `state/naver_mail` |
 
 See [.env.example](.env.example) for the full list.
 
@@ -141,7 +291,21 @@ src/
 │   └── sync_obsidian.py      # Transcript → Obsidian sync
 ├── pipeline/            # Shared utilities
 │   ├── paths.py              # Central path configuration
-│   └── utils.py              # Common utilities
+│   ├── utils.py              # Common utilities
+│   ├── health_check.py       # Pipeline health checks
+│   ├── minions_queue.py      # Postgres-backed durable job queue
+│   └── validate_state.py     # State file validation
+├── integrations/        # External service integrations
+│   ├── gmail_classifier.py   # Gmail inbox auto-classifier
+│   ├── email_todo_extract.py # Email → TODO extraction
+│   ├── calendar.py           # Google Calendar integration
+│   ├── sms_handler.py        # SMS pipeline placeholder
+│   └── naver_mail.py          # Naver Mail IMAP archiver
+├── todo/                # TODO management
+│   └── persistent_store.py   # Persistent store with Jaccard dedup
+├── knowledge/           # Knowledge graph & signal detection
+│   ├── graph.py              # Entity relationship graph
+│   └── signal_detector.py    # 3-band fast scoring + signal detection
 └── queue/               # Pipeline health & retry
     ├── gap_analyzer.py       # Pipeline gap analysis
     └── retry_queue.py        # Atomic retry queue
@@ -168,6 +332,18 @@ For 2-speaker Korean business calls, the pipeline uses multiple signals:
 - Korean honorific detection (습니다, 입니다, 드리, etc.)
 - First-speaker greeting analysis
 
+### Jaccard Fuzzy Dedup for TODOs
+
+The persistent TODO store uses bigram Jaccard similarity (threshold ≥ 0.55) to prevent duplicate TODOs from being added across multiple extraction runs. Same-source dedup merges shorter titles into longer, more descriptive ones.
+
+### 3-Band Signal Scoring
+
+The signal detector uses a weighted multi-signal scoring system to pre-filter text before any LLM API call, saving tokens and latency on trivial messages.
+
+### Minions Job Queue
+
+The Postgres-backed job queue provides crash recovery, idempotent submission, fan-out parallel execution with aggregators, and job steering via messages.
+
 ## Contributing
 
 1. Fork the repository
@@ -179,3 +355,21 @@ For 2-speaker Korean business calls, the pipeline uses multiple signals:
 ## License
 
 This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+
+## Changelog
+
+### v0.3.0
+- Added `src/integrations/` — Gmail classifier, email TODO extraction, calendar integration, SMS handler, Naver Mail archiver
+- Added `src/todo/` — Persistent TODO store with Jaccard fuzzy dedup
+- Added `src/knowledge/` — Knowledge graph builder and 3-band signal detector
+- Added `src/pipeline/minions_queue.py` — Postgres-backed durable job queue
+- Added `src/pipeline/validate_state.py` — State file validation
+- All personal data, passwords, and internal paths removed
+
+### v0.2.0
+- STT correction layer with hot-reload
+- Gap analyzer with cause taxonomy
+- Retry queue with exponential backoff
+
+### v0.1.0
+- Initial release: WhisperX transcription, LLM extraction, Obsidian sync
