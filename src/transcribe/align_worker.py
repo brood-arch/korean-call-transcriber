@@ -11,7 +11,6 @@ This script ONLY imports whisperx (no faster_whisper/ctranslate2).
 import argparse
 import gc
 import json
-import logging
 import os
 import subprocess
 import sys
@@ -21,8 +20,6 @@ from pathlib import Path
 os.environ["PATH"] = str(Path(sys.executable).parent) + os.pathsep + os.environ.get("PATH", "")
 os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 import warnings
-
-log = logging.getLogger(__name__)
 
 warnings.filterwarnings("ignore")
 

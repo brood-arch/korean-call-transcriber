@@ -608,8 +608,7 @@ def main():
         except Exception as e:
             err_str = str(e)
             fail_count = blacklist_add(audio_path.stem, err_str)
-            print(f"  ❌ ({fail_count}/{MAX_CONSECUTIVE_FAILURES}): {err_str[:80]}", flush=True)
-            log(f"FAIL {audio_path.name}: {err_str[:200]}")
+            log(f"FAIL ({fail_count}/{MAX_CONSECUTIVE_FAILURES}) {audio_path.name}: {err_str[:80]}")
 
     gpu_after = get_gpu_free_mb()
     print(f"\nDone: {success}/{len(pending)} | GPU: {gpu_after}MB", flush=True)

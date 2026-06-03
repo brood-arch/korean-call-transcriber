@@ -83,7 +83,7 @@ def main():
         transcript_dir = Path(args.transcript_dir or WIN_TRANSCRIPT_DIR)
 
     if not transcript_dir.exists():
-        print(f"ERROR: transcript dir not found: {transcript_dir}")
+        log.error(f"transcript dir not found: {transcript_dir}")
         sys.exit(1)
 
     # Find missing segments
@@ -101,7 +101,7 @@ def main():
                 if mt >= cutoff:
                     filtered.append((stem, segs, audio))
             except Exception as exc:
-                print(f"  WARN: failed to stat segments file: {exc}")
+                log.warning(f"failed to stat segments file: {exc}")
         missing = filtered
 
     if not missing:
@@ -155,15 +155,15 @@ def main():
                     if not meta.get("align_ok", False) or not meta.get("diarize_ok", False):
                         meta_ok = False
                 except Exception as exc:
-                    print(f"  WARN: could not inspect result metadata: {exc}")
+                    log.warning("could not inspect result metadata: %s", exc)
                 if not meta_ok or result.returncode not in (0, 3221226505):
-                    print(f"  WARN ({size} bytes, exit={result.returncode}, meta_ok={meta_ok})")
+                    log.warning("%s bytes, exit=%s, meta_ok=%s", size, result.returncode, meta_ok)
                     fail += 1
                 else:
                     print(f"  OK ({size} bytes)")
                     ok += 1
             else:
-                print(f"  FAIL (exit={result.returncode})")
+                log.error(f"FAIL (exit={result.returncode})")
                 if result.stderr:
                     print(f"  stderr: {result.stderr[-500:]}")
                 fail += 1
@@ -171,10 +171,10 @@ def main():
             print("  TIMEOUT")
             fail += 1
         except Exception as e:
-            print(f"  ERROR: {e}")
+            log.error(f"{e}")
             fail += 1
 
-    print(f"\nDONE {ok}/{len(missing)} diarized, {fail} failed")
+    log.info(f"DONE {ok}/{len(missing)} diarized, {fail} failed")
     sys.exit(1 if fail > 0 else 0)
 
 

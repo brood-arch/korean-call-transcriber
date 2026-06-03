@@ -11,11 +11,14 @@ Exit 0 = success, exit 2 = error.
 
 import argparse
 import json
+import logging
 import os
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 # --- Config (same as parent script) ---
 SOURCE_DIR = Path(os.environ.get("KCT_AUDIO_DIR", "data/audio"))
@@ -52,7 +55,7 @@ def get_audio_duration(path):
                 if m:
                     return int(m.group(1))*3600 + int(m.group(2))*60 + float(m.group(3))
         except Exception as exc:
-            print(f"{cmd_name} duration probe failed: {exc}", file=sys.stderr)
+            log.warning("duration probe failed for %s: %s", cmd_name, exc)
             continue
     return 0.0
 
@@ -175,7 +178,7 @@ def main():
             args.language, args.beam_size, args.output_dir,
         )
     except Exception as e:
-        print(f"ERROR: {e}", file=sys.stderr, flush=True)
+        log.error("transcribe_file failed: %s", e)
         return 2
 
 
