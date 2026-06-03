@@ -3,6 +3,9 @@
 
 class TestAlignWorker:
     def test_import_and_main_exists(self):
+        import pytest
+
+        pytest.importorskip("torch", reason="align_worker requires torch")
         from src.transcribe import align_worker
         assert hasattr(align_worker, "main")
         assert hasattr(align_worker, "subprocess")
@@ -29,5 +32,4 @@ class TestWorker:
     def test_get_audio_duration_missing(self):
         from src.transcribe.worker import get_audio_duration
         result = get_audio_duration("/nonexistent/file.m4a")
-        # Should return 0 or None for missing files
         assert result is None or result == 0
