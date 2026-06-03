@@ -68,7 +68,7 @@ This tool processes sensitive communications (calls, emails, SMS). **Transcript 
                         └──────────────────┘     └──────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────┐
-│  Extended Pipeline (v0.3.0)                                         │
+│  Extended Pipeline (v0.5)                                           │
 │                                                                     │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
 │  │ Gmail        │  │ Email TODO   │  │ Calendar     │              │

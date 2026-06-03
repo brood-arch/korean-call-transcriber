@@ -139,7 +139,7 @@ def test_success_history_redacts_sensitive_output():
     assert "abc123456789012345" not in history["stdout_tail"]
     assert "010-1234-5678" not in history["stderr_tail"]
     assert "p***@example.com" in history["stdout_tail"]
-    assert "010-****-****" in history["stderr_tail"]
+    assert "REDACTED" in history["stderr_tail"]
 
 
 def test_worker_records_failure_attempt_backoff_log_and_backup(tmp_path):

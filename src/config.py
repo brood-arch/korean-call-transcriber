@@ -61,9 +61,10 @@ def get_llm_config(api_key: str = "") -> LLMConfig:
     )
 
 
-def path_from_env(*names: str, default: str | Path) -> Path:
+def path_from_env(*names: str, default: str | Path, deprecated: tuple[str, ...] | None = None) -> Path:
     """Return a Path from the first available environment variable."""
-    return Path(get_env(*names, default=str(default), deprecated=tuple(names[1:])))
+    dep = deprecated or ()
+    return Path(get_env(*names, default=str(default), deprecated=dep))
 
 
 TRANSCRIPT_DIR = path_from_env("KCT_TRANSCRIPT_DIR", "TRANSCRIPT_DIR", default=WORKSPACE / "output" / "transcripts")
@@ -87,7 +88,6 @@ MINIONS_DB_URL = get_env("MINIONS_DB_URL")
 KCT_ENABLE_SHELL_JOBS = get_env("KCT_ENABLE_SHELL_JOBS", default="0")
 
 # Transcription
-HF_TOKEN_FILE = get_env("HF_TOKEN_FILE")
 MY_NAME = get_env("MY_NAME", default="Me")
 WHISPER_MODEL = get_env("WHISPER_MODEL", default="large-v3-turbo")
 WHISPER_COMPUTE_TYPE = get_env("WHISPER_COMPUTE_TYPE", default="float16")
@@ -119,6 +119,9 @@ LANGFUSE_PUBLIC_KEY = get_env("LANGFUSE_PUBLIC_KEY")
 TELEGRAM_BOT_TOKEN = get_env("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = get_env("TELEGRAM_CHAT_ID")
 
-# WSL bridge
-KCT_WINDOWS_PYTHON = get_env("KCT_WINDOWS_PYTHON")
+# Windows/WSL bridge
+WINDOWS_PYTHON = get_env("KCT_WINDOWS_PYTHON", "WINDOWS_PYTHON", default="python", deprecated=("WINDOWS_PYTHON",))
+WHISPERX_PYTHON = get_env("KCT_WHISPERX_PYTHON", "WHISPERX_PYTHON", default=r".\tools\whisperx-venv\Scripts\python.exe", deprecated=("WHISPERX_PYTHON",))
+HF_TOKEN_FILE = get_env("KCT_HF_TOKEN_FILE", "HF_TOKEN_FILE", default="", deprecated=("HF_TOKEN_FILE",))
 KCT_ALIGN_WORKER = get_env("KCT_ALIGN_WORKER", default=r"src\transcribe\align_worker.py")
+CHROMA_INDEX_DIR = path_from_env("KCT_CHROMA_INDEX_DIR", "CHROMA_INDEX_DIR", default=TRANSCRIPT_DIR / "chroma_index", deprecated=("CHROMA_INDEX_DIR",))

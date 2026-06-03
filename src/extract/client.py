@@ -4,6 +4,8 @@ Handles HTTP requests, retry with exponential backoff,
 and Langfuse observability integration.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import time
@@ -16,9 +18,12 @@ from .prompt import get_prompt
 log = logging.getLogger(__name__)
 
 # Pipeline config
-MAX_CONTENT_CHARS = 12000  # P1-4: GLM ctx 기준 여유 있음
-MAX_RETRIES = 4            # increased from 3 for better resilience
+MAX_CONTENT_CHARS = 12000  # GLM ctx 기준 여유 있음
+MAX_RETRIES = 4
 RETRY_BACKOFF = [5, 15, 45, 90]  # seconds — exponential for 429
+
+# HTTP status codes that should NOT be retried
+_NON_RETRYABLE = {400, 401, 403, 404}
 
 
 def get_llm_config(api_key: str = "") -> dict[str, str]:
@@ -30,6 +35,42 @@ def get_llm_config(api_key: str = "") -> dict[str, str]:
         "model": config.model,
         "disable_thinking": config.disable_thinking,
     }
+
+
+def _extract_json_from_text(text: str) -> dict | None:
+    """Extract the first JSON object from text that may contain prose or fences.
+
+    Handles:
+    - Plain JSON: ``{"key": "value"}``
+    - Markdown fenced: ````json\\n{...}\\n``` ``
+    - Prose prefix: ``Here is the JSON:\\n{...}``
+    - Trailing text after the closing brace
+    """
+    text = text.strip()
+    if not text:
+        return None
+
+    # Strip markdown fences
+    if text.startswith("```"):
+        text = text.removeprefix("```json").removeprefix("```")
+        text = text.removesuffix("```").strip()
+
+    # Try direct parse first
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # Find first { ... last } and try to parse
+    start = text.find("{")
+    end = text.rfind("}")
+    if start >= 0 and end > start:
+        try:
+            return json.loads(text[start : end + 1])
+        except json.JSONDecodeError:
+            pass
+
+    return None
 
 
 def call_llm_json(
@@ -47,10 +88,16 @@ def call_llm_json(
     import urllib.request
 
     config = _resolve_llm_config(api_key)
+
+    # Early validation: refuse to make HTTP requests without an API key
+    if not config.api_key:
+        log.error("LLM_API_KEY is not configured; skipping API call")
+        return None, {"error": "missing_api_key"}
+
     resolved_base_url = (base_url or config.base_url).rstrip("/")
     resolved_model = model or config.model
 
-    payload_obj = {
+    payload_obj: dict = {
         "model": resolved_model,
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": max_tokens,
@@ -61,13 +108,13 @@ def call_llm_json(
     if config.disable_thinking in {"1", "true", "yes"} or (
         config.disable_thinking == "auto" and resolved_model.lower().startswith("glm")
     ):
-        # GLM coding endpoints may emit long reasoning traces by default.
         payload_obj["thinking"] = {"type": "disabled"}
     payload = json.dumps(payload_obj).encode("utf-8")
 
     api_url = resolved_base_url + "/chat/completions"
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {config.api_key}"}
 
+    last_error = ""
     for attempt in range(MAX_RETRIES):
         try:
             req = urllib.request.Request(api_url, data=payload, headers=headers)
@@ -75,16 +122,20 @@ def call_llm_json(
                 result = json.loads(resp.read().decode("utf-8"))
 
             text = result.get("choices", [{}])[0].get("message", {}).get("content", "")
-            text = text.strip()
-            if text.startswith("```"):
-                text = text.removeprefix("```json").removeprefix("```").strip()
-                text = text.removesuffix("```").strip()
-            return json.loads(text), result.get("usage", {})
-
-        except json.JSONDecodeError as e:
-            print(f"    Invalid JSON response: {e}")
+            parsed = _extract_json_from_text(text)
+            if parsed is not None:
+                return parsed, result.get("usage", {})
+            log.warning("Attempt %d: could not extract JSON from LLM response", attempt + 1)
+            last_error = "json_extract_failed"
             if attempt < MAX_RETRIES - 1:
                 time.sleep(5)
+
+        except json.JSONDecodeError as e:
+            last_error = f"json_decode: {e}"
+            log.warning("Attempt %d: JSON decode error: %s", attempt + 1, e)
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(5)
+
         except urllib.error.HTTPError as e:
             status = e.code
             body = ""
@@ -92,39 +143,50 @@ def call_llm_json(
                 body = e.read().decode("utf-8", errors="replace")[:200]
             except Exception as exc:
                 log.debug("Failed to read LLM HTTP error body: %s", redact_sensitive_text(repr(exc)))
+
+            last_error = f"http_{status}"
             if status == 429:
                 wait = 30 * (2 ** attempt)
-                print(f"    429 rate limit (attempt {attempt+1}/{MAX_RETRIES}), waiting {wait}s...")
-                time.sleep(wait)
+                log.warning("429 rate limit (attempt %d/%d), waiting %ds", attempt + 1, MAX_RETRIES, wait)
+                if attempt < MAX_RETRIES - 1:
+                    time.sleep(wait)
             elif status >= 500:
-                wait = RETRY_BACKOFF[attempt] if attempt < len(RETRY_BACKOFF) else 30
-                print(f"    Server error {status}: {redact_sensitive_text(body[:100])}, retrying in {wait}s...")
-                time.sleep(wait)
-            elif status == 401:
-                print(f"    Auth error (key invalid?): {redact_sensitive_text(body[:100])}")
+                wait = RETRY_BACKOFF[min(attempt, len(RETRY_BACKOFF) - 1)]
+                log.warning("Server error %d (attempt %d/%d), retrying in %ds", status, attempt + 1, MAX_RETRIES, wait)
+                if attempt < MAX_RETRIES - 1:
+                    time.sleep(wait)
+            elif status in _NON_RETRYABLE:
+                log.error("Non-retryable HTTP %d: %s", status, redact_sensitive_text(body[:100]))
                 break
             else:
-                wait = RETRY_BACKOFF[attempt] if attempt < len(RETRY_BACKOFF) else 30
-                print(f"    HTTP error {status}: {redact_sensitive_text(body[:100])}, retrying in {wait}s...")
-                time.sleep(wait)
+                wait = RETRY_BACKOFF[min(attempt, len(RETRY_BACKOFF) - 1)]
+                log.warning("HTTP %d (attempt %d/%d), retrying in %ds", status, attempt + 1, MAX_RETRIES, wait)
+                if attempt < MAX_RETRIES - 1:
+                    time.sleep(wait)
+
         except urllib.error.URLError as e:
-            wait = RETRY_BACKOFF[attempt] if attempt < len(RETRY_BACKOFF) else 30
-            print(f"    Network error: {redact_sensitive_text(repr(e))}, retrying in {wait}s...")
-            time.sleep(wait)
+            last_error = f"network: {e}"
+            wait = RETRY_BACKOFF[min(attempt, len(RETRY_BACKOFF) - 1)]
+            log.warning("Network error (attempt %d/%d): %s", attempt + 1, MAX_RETRIES, redact_sensitive_text(repr(e)))
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(wait)
+
         except Exception as e:
-            print(f"    Unexpected error: {type(e).__name__}: {redact_sensitive_text(str(e))}")
+            last_error = f"unexpected: {type(e).__name__}: {e}"
+            log.exception("Unexpected error in LLM call (attempt %d/%d)", attempt + 1, MAX_RETRIES)
             if attempt < MAX_RETRIES - 1:
                 time.sleep(5)
 
-    return None, {}
+    log.error("All %d LLM attempts failed (last: %s)", MAX_RETRIES, last_error)
+    return None, {"error": last_error, "attempts": MAX_RETRIES}
 
 
 def call_llm_extract(api_key: str, content: str, run_id: str = "",
                      lf_available: bool = False) -> dict | None:
     """Call an OpenAI-compatible LLM with unified extraction prompt.
 
-    Returns dict with keys: summary, todos, appointments, entities, products, money, risks, corrections
-    Returns None on failure.
+    Returns dict with keys: summary, todos, appointments, entities, products,
+    money, risks, corrections.  Returns None on failure.
     """
     from .parser import parse_unified_response
 
@@ -155,7 +217,6 @@ def call_llm_extract(api_key: str, content: str, run_id: str = "",
             parsed = parse_unified_response(text)
             parsed["raw_usage"] = usage
 
-            # Langfuse: record result
             if _gen:
                 try:
                     _gen.update(
@@ -172,7 +233,7 @@ def call_llm_extract(api_key: str, content: str, run_id: str = "",
                         metadata={
                             "prompt_tokens": parsed.get("raw_usage", {}).get("prompt_tokens", 0),
                             "completion_tokens": parsed.get("raw_usage", {}).get("completion_tokens", 0),
-                        }
+                        },
                     )
                     _gen.end()
                 except Exception as exc:
@@ -180,7 +241,7 @@ def call_llm_extract(api_key: str, content: str, run_id: str = "",
 
             return parsed
         except Exception as e:
-            print(f"    Parse error: {type(e).__name__}: {redact_sensitive_text(str(e))}")
+            log.error("Parse error: %s: %s", type(e).__name__, redact_sensitive_text(str(e)))
 
     # Langfuse cleanup on failure
     if _gen:

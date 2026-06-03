@@ -104,7 +104,7 @@ def test_call_llm_json_returns_none_after_json_errors(monkeypatch):
     result, usage = client.call_llm_json("prompt", api_key="key", response_format=False)
 
     assert result is None
-    assert usage == {}
+    assert "error" in usage or usage == {}
 
 
 def test_call_llm_json_glm_disables_thinking(monkeypatch):

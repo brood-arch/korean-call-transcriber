@@ -46,11 +46,7 @@ def safe_write_text(path: Path, content: str) -> None:
 
 
 def normalize_title(title: str) -> str:
-    """TODO 제목을 dedup 키 용도로 정규화한다.
-
-    원본 출처: persistent_todo_store.py:_normalize,
-    extract_all.py:_normalize_title, todo_auto_expire.py:normalize
-    """
+    """TODO 제목을 dedup 키 용도로 정규화한다."""
     if isinstance(title, dict):
         title = title.get("title", "")
     if not isinstance(title, str):
@@ -59,11 +55,7 @@ def normalize_title(title: str) -> str:
 
 
 def normalize_source(source: str) -> str:
-    """source에서 알려진 오디오/텍스트 확장자(.m4a/.txt)를 제거한다.
-
-    원본 출처: extract_all.py:_normalize_source,
-    persistent_todo_store.py:merge_todos, todo_report.py:format_call_context
-    """
+    """source에서 알려진 오디오/텍스트 확장자(.m4a/.txt)를 제거한다."""
     source = str(source or "")
     for ext in (".m4a", ".txt"):
         if source.endswith(ext):
@@ -72,15 +64,7 @@ def normalize_source(source: str) -> str:
 
 
 def parse_call_context(filename: str) -> dict:
-    """통화 녹음 파일명에서 caller, phone, called_at, suffix를 추출한다.
-
-    파일명 형식: '이름_전화번호_YYYYMMDDHHMMSS' 또는
-    '이름_전화번호_YYYYMMDDHHMMSS_dddddd'. 이름에 '_'가 포함되어도
-    전화번호/타임스탬프 기준으로 파싱한다.
-
-    원본 출처: call_recordings_automation.py:parse_source_name,
-    extract_all.py:_parse_call_context, todo_report.py:format_call_context
-    """
+    """통화 녹음 파일명에서 caller, phone, called_at, suffix를 추출한다."""
     base = Path(str(filename or "")).stem
     match = re.match(r"^(.*?)_(\d+)_(\d{14})(?:_(\d{6}))?$", base)
     if not match:
@@ -102,31 +86,13 @@ def parse_call_context(filename: str) -> dict:
 
 
 def todo_key(title: str, source: str) -> str:
-    """정규화된 TODO 제목과 정규화된 source로 stable dedup 키를 만든다.
-
-    원본 출처: persistent_todo_store.py:todo_key/_normalize/merge_todos,
-    extract_all.py:_normalize_title/_normalize_source
-    """
+    """정규화된 TODO 제목과 정규화된 source로 stable dedup 키를 만든다."""
     return f"{normalize_title(title)}|{normalize_source(source)}"
 
 
 def safe_load_json(path, default=None):
-    """JSON 파일을 안전하게 읽고, 파일 없음/JSON 파싱 오류 시 기본값을 반환한다.
-
-    scripts/safe_io.py가 있으면 safe_read_json을 참조한다.
-
-    원본 출처: call_recordings_automation.py:safe_io,
-    extract_all.py 직접 구현, persistent_todo_store.py:load_store,
-    todo_auto_expire.py:safe_load_json
-    """
+    """JSON 파일을 안전하게 읽고, 파일 없음/JSON 파싱 오류 시 기본값을 반환한다."""
     path = Path(path)
-    try:
-        from safe_io import safe_read_json
-
-        return safe_read_json(path, default=default)
-    except ImportError as exc:
-        log.debug("safe_io unavailable for JSON read: %s", exc)
-
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError):
@@ -134,29 +100,9 @@ def safe_load_json(path, default=None):
 
 
 def safe_save_json(path, data, origin: str | None = None):
-    """JSON 파일을 .tmp 파일 경유로 atomic write 한다.
-
-    scripts/safe_io.py가 있으면 safe_write_json을 참조한다.
-
-    원본 출처: call_recordings_automation.py:safe_io,
-    extract_all.py 직접 구현, persistent_todo_store.py:save_store,
-    todo_auto_expire.py:safe_save_json
-    """
-    path = Path(path)
-    try:
-        from safe_io import safe_write_json
-
-        return safe_write_json(path, data, origin=origin or "pipeline_utils")
-    except ImportError as exc:
-        log.debug("safe_io unavailable for JSON write: %s", exc)
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp")
-    tmp.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2, default=str),
-        encoding="utf-8",
-    )
-    tmp.replace(path)
+    """JSON 데이터를 UUID tmp 파일 경유로 atomic write 한다."""
+    content = json.dumps(data, ensure_ascii=False, indent=2, default=str)
+    safe_write_text(Path(path), content)
 
 
 def safe_read_json(path, default=None):
@@ -199,28 +145,17 @@ def compress_transcript(text: str, budget: int = _DEFAULT_BUDGET_CHARS) -> str:
     Unlike OpenHuman's TokenJuice (which targets CLI output), this focuses on
     Korean call transcripts: remove timestamps, speaker labels, and excessive
     whitespace while preserving all substantive content.
-
-    Args:
-        text: Raw transcript text.
-        budget: Maximum character budget (default 12000 ≈ ~3k tokens).
-
-    Returns:
-        Compressed text within budget.
     """
     if not text:
         return text
 
-    # If already under budget, just do light cleanup
     result = text
     for pattern, replacement in _NOISE_PATTERNS:
         result = re.sub(pattern, replacement or "", result)
 
-    # Strip leading/trailing whitespace per line
     result = "\n".join(line.strip() for line in result.split("\n"))
     result = result.strip()
 
-    # Truncate to budget if needed (prefer keeping beginning — usually the
-    # most signal-rich part of a call)
     if len(result) > budget:
         result = result[:budget]
 
@@ -230,24 +165,11 @@ def compress_transcript(text: str, budget: int = _DEFAULT_BUDGET_CHARS) -> str:
 def fallback_summary(content: str, source: str = "") -> dict:
     """Deterministic fallback when LLM extraction fails.
 
-    Inspired by OpenHuman's summarise.rs fallback_summary: if the LLM call
-    fails, the pipeline should never stop — produce a best-effort result
-    using heuristics instead.
-
     Returns a minimal extraction dict compatible with extract_all.py's
     unified extraction schema.
-
-    Args:
-        content: The transcript text that failed LLM extraction.
-        source: Source filename for traceability.
-
-    Returns:
-        dict with keys: summary, todos, appointments, entities, products,
-        money, risks, corrections — all populated heuristically.
     """
     content = content or ""
 
-    # Heuristic one-line summary: first non-trivial sentence
     first_sentence = ""
     for line in content.split("\n"):
         line = line.strip()
@@ -255,7 +177,6 @@ def fallback_summary(content: str, source: str = "") -> dict:
             first_sentence = line[:100]
             break
 
-    # Count business keywords for a rough importance indicator
     business_kw = [
         "주문", "견적", "발주", "납기", "결제", "입금", "출고", "배송",
         "수령", "방문", "연락", "확인", "처리", "준비", "요청",
