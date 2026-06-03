@@ -1,0 +1,20 @@
+{
+  "source_file": "sample_call.m4a",
+  "summary": "신형송풍기가 XX기계에 환풍기 날개 200개 납기 확인 및 채반 대자 500개 견적 요청",
+  "todos": [
+    {
+      "title": "채반 대자 500개 견적 메일 발송",
+      "assignee": "XX기계",
+      "deadline": "오늘 중",
+      "priority": "high"
+    }
+  ],
+  "entities": [
+    {"name": "신형송풍기", "role": "buyer"},
+    {"name": "XX기계", "role": "supplier"}
+  ],
+  "products": [
+    {"name": "환풍기 날개", "quantity": 200, "status": "출고 예정 (금요일)"},
+    {"name": "채반 대자", "quantity": 500, "status": "견적 대기"}
+  ]
+}
