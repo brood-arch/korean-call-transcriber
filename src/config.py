@@ -85,3 +85,40 @@ NAVER_MAIL_PASSWORD = get_env("NAVER_MAIL_PASSWORD")
 GCAL_TOKEN_PATH = path_from_env("GCAL_TOKEN_PATH", default=STATE_DIR / "gcal_token.json")
 MINIONS_DB_URL = get_env("MINIONS_DB_URL")
 KCT_ENABLE_SHELL_JOBS = get_env("KCT_ENABLE_SHELL_JOBS", default="0")
+
+# Transcription
+HF_TOKEN_FILE = get_env("HF_TOKEN_FILE")
+MY_NAME = get_env("MY_NAME", default="Me")
+WHISPER_MODEL = get_env("WHISPER_MODEL", default="large-v3-turbo")
+WHISPER_COMPUTE_TYPE = get_env("WHISPER_COMPUTE_TYPE", default="float16")
+TRANSCRIBE_LOG = path_from_env("TRANSCRIBE_LOG", default=LOG_DIR / "transcribe_whisperx.log")
+
+# Minions DB
+MINIONS_DB_HOST = get_env("MINIONS_DB_HOST", default="localhost")
+MINIONS_DB_PORT = get_env("MINIONS_DB_PORT", default="5432")
+MINIONS_DB_NAME = get_env("MINIONS_DB_NAME", default="minions")
+MINIONS_DB_USER = get_env("MINIONS_DB_USER", default="minions")
+MINIONS_DB_PASS = get_env("MINIONS_DB_PASS")
+
+# Naver Mail
+NAVER_MAIL_HOST = get_env("NAVER_MAIL_HOST", default="imap.naver.com")
+NAVER_MAIL_PORT = get_env("NAVER_MAIL_PORT", default="993")
+NAVER_MAIL_LIMIT = get_env("NAVER_MAIL_LIMIT", default="100")
+NAVER_MAIL_STATE_DIR = path_from_env("NAVER_MAIL_STATE_DIR", default=STATE_DIR / "naver_mail")
+NAVER_MAIL_FOLDERS = get_env("NAVER_MAIL_FOLDERS", default="INBOX,Sent Messages")
+
+# Corrections
+CORRECTIONS_RULES_PATH = path_from_env("KCT_CORRECTIONS_RULES", default=STATE_DIR / "correction_rules.json")
+CORRECTIONS_LOG_PATH = path_from_env("KCT_CORRECTIONS_LOG", default=STATE_DIR / "corrections.jsonl")
+
+# Langfuse
+LANGFUSE_SECRET_KEY = get_env("LANGFUSE_SECRET_KEY")
+LANGFUSE_PUBLIC_KEY = get_env("LANGFUSE_PUBLIC_KEY")
+
+# Telegram notifications
+TELEGRAM_BOT_TOKEN = get_env("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = get_env("TELEGRAM_CHAT_ID")
+
+# WSL bridge
+KCT_WINDOWS_PYTHON = get_env("KCT_WINDOWS_PYTHON")
+KCT_ALIGN_WORKER = get_env("KCT_ALIGN_WORKER", default=r"src\transcribe\align_worker.py")

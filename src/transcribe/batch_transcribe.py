@@ -33,26 +33,49 @@ from pathlib import Path
 
 import psutil
 
-from src.config import AUDIO_DIR, EXIT_FAILURE, EXIT_OK, EXIT_PARTIAL, LOG_DIR, STATE_DIR, TRANSCRIPT_DIR
+from src.config import (
+    AUDIO_DIR,
+    EXIT_FAILURE,
+    EXIT_OK,
+    EXIT_PARTIAL,
+    LOG_DIR,
+    STATE_DIR,
+    TRANSCRIPT_DIR,
+)
+from src.config import (
+    HF_TOKEN_FILE as _HF_TOKEN_FILE,
+)
+from src.config import (
+    MY_NAME as _MY_NAME,
+)
+from src.config import (
+    TRANSCRIBE_LOG as _TRANSCRIBE_LOG,
+)
+from src.config import (
+    WHISPER_COMPUTE_TYPE as _COMPUTE_TYPE,
+)
+from src.config import (
+    WHISPER_MODEL as _WHISPER_MODEL,
+)
 from src.correct.transcription_corrections import apply_corrections, ensure_rules_file
 from src.pipeline.utils import safe_write_text
 
 # ffmpeg setup: ensure the Python Scripts dir (which may contain ffmpeg.exe) is in PATH
 os.environ["PATH"] = str(Path(sys.executable).parent) + os.pathsep + os.environ.get("PATH", "")
 
-# ── Configuration from environment ──────────────────────────────────────
-SOURCE_DIR = Path(os.environ.get("AUDIO_DIR", str(AUDIO_DIR)))
-OUTPUT_DIR = Path(os.environ.get("TRANSCRIPT_DIR", str(TRANSCRIPT_DIR)))
-LOG_FILE = Path(os.environ.get("TRANSCRIBE_LOG", str(LOG_DIR / "transcribe_whisperx.log")))
+# ── Configuration ──────────────────────────────────────────────────────
+SOURCE_DIR = AUDIO_DIR
+OUTPUT_DIR = TRANSCRIPT_DIR
+LOG_FILE = _TRANSCRIBE_LOG
 BLACKLIST_FILE = STATE_DIR / "transcribe_blacklist.json"
-HF_TOKEN_FILE = Path(os.environ.get("HF_TOKEN_FILE", ""))
-MY_NAME = os.environ.get("MY_NAME", "Me")
+HF_TOKEN_FILE = Path(_HF_TOKEN_FILE) if _HF_TOKEN_FILE else Path()
+MY_NAME = _MY_NAME
 
 WHISPER_MODEL = os.environ.get(
     "WHISPER_MODEL",
-    "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+    _WHISPER_MODEL or "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
 )
-COMPUTE_TYPE = os.environ.get("WHISPER_COMPUTE_TYPE", "float16")
+COMPUTE_TYPE = os.environ.get("WHISPER_COMPUTE_TYPE", _COMPUTE_TYPE or "float16")
 LANGUAGE = "ko"
 MAX_AUDIO_DURATION_SEC = 3600  # 60 minutes
 LONG_AUDIO_CHUNK_THRESHOLD_SEC = 300

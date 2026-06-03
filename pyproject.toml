@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "korean-call-transcriber"
-version = "0.4.0"
+version = "0.5.0"
 description = "Korean phone call transcription pipeline with Whisper + speaker diarization, auto TODO/schedule/entity extraction"
 readme = "README.md"
 license = {text = "MIT"}
@@ -38,12 +38,6 @@ kct-health = "src.queue.gap_analyzer:main"
 kct-sync-obsidian = "src.sync.sync_obsidian:main"
 
 [project.optional-dependencies]
-core = [
-    "faster-whisper>=1.0.0",
-    "ffmpeg-python>=0.2.0",
-    "numpy>=1.24.0",
-    "psutil>=5.9.0",
-]
 gpu = [
     "nvidia-ml-py3>=7.352.0",
     "torch>=2.0.0",
@@ -57,7 +51,9 @@ calendar = [
     "google-auth>=2.0.0",
     "google-auth-oauthlib>=1.0.0",
 ]
-obsidian = []
+all = [
+    "korean-call-transcriber[gpu,queue,calendar]",
+]
 dev = [
     "chromadb>=0.4.0",
     "pytest>=7.0",
@@ -79,3 +75,8 @@ line-length = 120
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
 ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/extract/extract_entities.py" = ["E402"]
+"src/extract/extract_schedules.py" = ["E402"]
+"src/correct/corrections.py" = ["E402"]

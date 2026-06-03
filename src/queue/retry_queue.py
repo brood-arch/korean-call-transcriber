@@ -278,7 +278,7 @@ def command_for_entry(entry: dict[str, Any], workspace: Path, running_on_wsl: bo
             argv = [win_py, "-m", "src.transcribe.batch_transcribe", "--file", win_source_path, "--force"]
         return argv
     if action == "entity":
-        return [sys.executable, "-m", "src.extract.extract_entities", "--base-dir", str(Path(str(entry.get("transcript_path") or workspace)).parent)]
+        return [sys.executable, "-m", "src.extract.extract_all", "--base-dir", str(Path(str(entry.get("transcript_path") or workspace)).parent)]
     if action == "rag":
         return [sys.executable, "-m", "src.queue.gap_analyzer", "--json"]
     if action == "obsidian":

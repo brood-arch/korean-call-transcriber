@@ -49,9 +49,23 @@ except Exception:
         return value[-limit:] if limit is not None else value
 
 try:
-    from src.config import MINIONS_DB_URL
+    from src.config import (
+        KCT_ENABLE_SHELL_JOBS,
+        MINIONS_DB_HOST,
+        MINIONS_DB_NAME,
+        MINIONS_DB_PASS,
+        MINIONS_DB_PORT,
+        MINIONS_DB_URL,
+        MINIONS_DB_USER,
+    )
 except Exception:
     MINIONS_DB_URL = os.environ.get("MINIONS_DB_URL", "")
+    MINIONS_DB_HOST = os.environ.get("MINIONS_DB_HOST", "localhost")
+    MINIONS_DB_PORT = os.environ.get("MINIONS_DB_PORT", "5432")
+    MINIONS_DB_NAME = os.environ.get("MINIONS_DB_NAME", "minions")
+    MINIONS_DB_USER = os.environ.get("MINIONS_DB_USER", "minions")
+    MINIONS_DB_PASS = os.environ.get("MINIONS_DB_PASS", "")
+    KCT_ENABLE_SHELL_JOBS = os.environ.get("KCT_ENABLE_SHELL_JOBS", "0")
 
 KST = timezone(timedelta(hours=9))
 
@@ -66,18 +80,17 @@ def _db_config() -> dict:
     """Build Postgres connection config from environment variables."""
     if MINIONS_DB_URL:
         return {"dsn": MINIONS_DB_URL}
-    password = os.environ.get("MINIONS_DB_PASS", "")
-    if not password:
+    if not MINIONS_DB_PASS:
         raise EnvironmentError(
             "MINIONS_DB_PASS environment variable is required. "
             "Set it to your Postgres password for the minions database."
         )
     return {
-        "host": os.environ.get("MINIONS_DB_HOST", "localhost"),
-        "port": int(os.environ.get("MINIONS_DB_PORT", "5432")),
-        "dbname": os.environ.get("MINIONS_DB_NAME", "minions"),
-        "user": os.environ.get("MINIONS_DB_USER", "minions"),
-        "password": password,
+        "host": MINIONS_DB_HOST,
+        "port": int(MINIONS_DB_PORT),
+        "dbname": MINIONS_DB_NAME,
+        "user": MINIONS_DB_USER,
+        "password": MINIONS_DB_PASS,
     }
 
 
@@ -93,7 +106,7 @@ def _get_conn():
 
 
 def _shell_jobs_enabled() -> bool:
-    return os.environ.get("KCT_ENABLE_SHELL_JOBS", "").lower() in {"1", "true", "yes"}
+    return KCT_ENABLE_SHELL_JOBS.lower() in {"1", "true", "yes"}
 
 
 class MinionsQueue:

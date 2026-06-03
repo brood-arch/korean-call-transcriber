@@ -143,18 +143,18 @@ def test_save_state_creates_directory(tmp_path):
 # ── Credentials check ───────────────────────────────────────────────────
 
 def test_credentials_missing_raises(monkeypatch):
-    from src.integrations.naver_mail import _get_credentials
-    monkeypatch.delenv("NAVER_MAIL_ADDRESS", raising=False)
-    monkeypatch.delenv("NAVER_MAIL_PASSWORD", raising=False)
+    import src.integrations.naver_mail as nm
+    monkeypatch.setattr(nm, "NAVER_MAIL_ADDRESS", "")
+    monkeypatch.setattr(nm, "NAVER_MAIL_PASSWORD", "")
     with pytest.raises(EnvironmentError):
-        _get_credentials()
+        nm._get_credentials()
 
 
 def test_credentials_present(monkeypatch):
-    from src.integrations.naver_mail import _get_credentials
-    monkeypatch.setenv("NAVER_MAIL_ADDRESS", "user@naver.com")
-    monkeypatch.setenv("NAVER_MAIL_PASSWORD", "secretpass")
-    addr, pw = _get_credentials()
+    import src.integrations.naver_mail as nm
+    monkeypatch.setattr(nm, "NAVER_MAIL_ADDRESS", "user@naver.com")
+    monkeypatch.setattr(nm, "NAVER_MAIL_PASSWORD", "secretpass")
+    addr, pw = nm._get_credentials()
     assert addr == "user@naver.com"
     assert pw == "secretpass"
 

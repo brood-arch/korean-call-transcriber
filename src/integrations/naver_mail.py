@@ -28,7 +28,6 @@ import email.header
 import imaplib
 import json
 import logging
-import os
 import re
 import sys
 from datetime import timedelta, timezone
@@ -36,8 +35,15 @@ from email.message import Message
 from pathlib import Path
 from typing import Optional
 
-from src.config import NAVER_MAIL_ADDRESS, NAVER_MAIL_PASSWORD
-from src.config import STATE_DIR as CONFIG_STATE_DIR
+from src.config import (
+    NAVER_MAIL_ADDRESS,
+    NAVER_MAIL_FOLDERS,
+    NAVER_MAIL_HOST,
+    NAVER_MAIL_LIMIT,
+    NAVER_MAIL_PASSWORD,
+    NAVER_MAIL_PORT,
+    NAVER_MAIL_STATE_DIR,
+)
 from src.pipeline.utils import safe_save_json
 
 log = logging.getLogger(__name__)
@@ -46,22 +52,20 @@ log = logging.getLogger(__name__)
 
 KST = timezone(timedelta(hours=9))
 
-IMAP_HOST = os.environ.get("NAVER_MAIL_HOST", "imap.naver.com")
-IMAP_PORT = int(os.environ.get("NAVER_MAIL_PORT", "993"))
-DEFAULT_FOLDERS = ['INBOX', '"Sent Messages"']
-LIMIT = int(os.environ.get("NAVER_MAIL_LIMIT", "100"))
-STATE_DIR = Path(os.environ.get("NAVER_MAIL_STATE_DIR", str(CONFIG_STATE_DIR / "naver_mail")))
+IMAP_HOST = NAVER_MAIL_HOST
+IMAP_PORT = int(NAVER_MAIL_PORT)
+DEFAULT_FOLDERS = [f.strip().strip('"') for f in NAVER_MAIL_FOLDERS.split(",")]
+LIMIT = int(NAVER_MAIL_LIMIT)
+STATE_DIR = NAVER_MAIL_STATE_DIR
 
 
 def _get_credentials() -> tuple[str, str]:
     """Read Naver Mail credentials from environment variables."""
-    addr = os.environ.get("NAVER_MAIL_ADDRESS", NAVER_MAIL_ADDRESS)
-    passwd = os.environ.get("NAVER_MAIL_PASSWORD", NAVER_MAIL_PASSWORD)
-    if not addr or not passwd:
+    if not NAVER_MAIL_ADDRESS or not NAVER_MAIL_PASSWORD:
         raise EnvironmentError(
             "Set NAVER_MAIL_ADDRESS and NAVER_MAIL_PASSWORD environment variables."
         )
-    return addr, passwd
+    return NAVER_MAIL_ADDRESS, NAVER_MAIL_PASSWORD
 
 
 # ── Helpers ────────────────────────────────────────────────────────────

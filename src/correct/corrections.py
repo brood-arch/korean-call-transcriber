@@ -11,12 +11,13 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+
+from src.config import CORRECTIONS_LOG_PATH, CORRECTIONS_RULES_PATH
 
 log = logging.getLogger(__name__)
 
@@ -30,14 +31,8 @@ _PROJECT_ROOT = _SCRIPT_DIR.parent.parent
 
 KST = timezone(timedelta(hours=9))
 
-RULES_PATH = Path(os.environ.get(
-    "CORRECTION_RULES_PATH",
-    str(_PROJECT_ROOT / "state" / "correction_rules.json"),
-))
-LOG_PATH = Path(os.environ.get(
-    "CORRECTION_LOG_PATH",
-    str(_PROJECT_ROOT / "state" / "correction_events.jsonl"),
-))
+RULES_PATH = CORRECTIONS_RULES_PATH
+LOG_PATH = CORRECTIONS_LOG_PATH
 
 DEFAULT_RULES: dict[str, Any] = {
     "exact_replacements": [],

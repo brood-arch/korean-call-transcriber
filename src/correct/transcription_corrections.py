@@ -176,6 +176,7 @@ def log_event(event: dict[str, Any]) -> None:
             tmp.replace(LOG_PATH)
     except Exception:
         pass  # Rotation failure should not block logging
+        # Silently swallowed: tmp file cleanup, rotation on tiny files
 
     line = json.dumps(event, ensure_ascii=False) + "\n"
     for attempt in range(3):

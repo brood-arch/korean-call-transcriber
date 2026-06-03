@@ -1,18 +1,4 @@
-"""Schedule Extractor — DEPRECATED.
-
-Use src.extract.extract_all (IntegratedPipeline) instead.
-This module is retained for reference only and will be removed in v0.5.0.
-"""
-
-import warnings
-
-warnings.warn(
-    "src.extract.extract_schedules is deprecated; use src.extract.extract_all",
-    DeprecationWarning,
-    stacklevel=2,
-)
-
-"""Original docstring preserved below:
+"""Schedule Extractor — Extract appointments, deadlines, and todos from transcriptions.
 
 Uses ChromaDB RAG to find schedule-relevant transcripts, then LLM to extract structured data.
 

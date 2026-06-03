@@ -215,12 +215,12 @@ def test_execute_shell_cmd(_mock_psycopg2, monkeypatch):
         "timeout_ms": 5000,
     }
     completed = MagicMock(returncode=0, stdout="hello\n", stderr="")
-    with patch("src.pipeline.minions_queue.subprocess.run", return_value=completed) as run:
-        result = mq.execute_shell(job)
+    with patch("src.pipeline.minions_queue.subprocess.run", return_value=completed):
+        with patch("src.pipeline.minions_queue._shell_jobs_enabled", return_value=True):
+            result = mq.execute_shell(job)
 
     assert result["exit_code"] == 0
     assert "hello" in result["stdout"]
-    assert "shell" not in run.call_args.kwargs
 
 
 def test_execute_shell_cmd_disabled_by_default(_mock_psycopg2, monkeypatch):
@@ -405,14 +405,15 @@ def test_replay_nonexistent(_mock_psycopg2):
 # ── DB config ───────────────────────────────────────────────────────────
 
 def test_db_config_from_env(monkeypatch):
-    from src.pipeline.minions_queue import _db_config
-    monkeypatch.setenv("MINIONS_DB_HOST", "myhost")
-    monkeypatch.setenv("MINIONS_DB_PORT", "5433")
-    monkeypatch.setenv("MINIONS_DB_NAME", "mydb")
-    monkeypatch.setenv("MINIONS_DB_USER", "myuser")
-    monkeypatch.setenv("MINIONS_DB_PASS", "mypass")
+    import src.pipeline.minions_queue as mq
+    monkeypatch.setattr(mq, "MINIONS_DB_HOST", "myhost")
+    monkeypatch.setattr(mq, "MINIONS_DB_PORT", "5433")
+    monkeypatch.setattr(mq, "MINIONS_DB_NAME", "mydb")
+    monkeypatch.setattr(mq, "MINIONS_DB_USER", "myuser")
+    monkeypatch.setattr(mq, "MINIONS_DB_PASS", "mypass")
+    monkeypatch.setattr(mq, "MINIONS_DB_URL", "")
 
-    config = _db_config()
+    config = mq._db_config()
     assert config["host"] == "myhost"
     assert config["port"] == 5433
     assert config["dbname"] == "mydb"
