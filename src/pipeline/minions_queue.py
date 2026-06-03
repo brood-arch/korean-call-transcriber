@@ -31,7 +31,7 @@ import os
 import subprocess
 import sys
 import time
-from datetime import timezone, timedelta
+from datetime import timedelta, timezone
 from typing import Optional
 
 try:

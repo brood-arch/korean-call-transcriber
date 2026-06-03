@@ -26,7 +26,7 @@ from typing import Any
 KST = timezone(timedelta(hours=9))
 
 try:
-    from src.pipeline.paths import AUDIO_DIR, TRANSCRIPT_DIR, STATE_DIR, LOG_DIR, WORKSPACE
+    from src.pipeline.paths import AUDIO_DIR, LOG_DIR, STATE_DIR, TRANSCRIPT_DIR, WORKSPACE
 except Exception:
     WORKSPACE = Path(os.environ.get("KCT_WORKSPACE", Path.cwd()))
     AUDIO_DIR = Path(os.environ.get("KCT_AUDIO_DIR", WORKSPACE / "data" / "audio"))

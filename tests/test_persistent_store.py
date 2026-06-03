@@ -4,7 +4,6 @@ import json
 
 import pytest
 
-
 # ── Fixtures ──────────────────────────────────────────────────────────────
 
 @pytest.fixture(autouse=True)
@@ -235,7 +234,7 @@ def test_merge_todos_same_source_dedup_then_merge(monkeypatch):
 # ── get_active ───────────────────────────────────────────────────────────
 
 def test_get_active_excludes_completed(tmp_path):
-    from src.todo.persistent_store import load_store, get_active
+    from src.todo.persistent_store import get_active, load_store
     completed = tmp_path / "completed_todos.json"
     completed.write_text(json.dumps([
         {"title": "done", "source": ""}

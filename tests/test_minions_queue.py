@@ -5,7 +5,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-
 # ── Mock psycopg2 globally for all tests ─────────────────────────────────
 
 @pytest.fixture(autouse=True)

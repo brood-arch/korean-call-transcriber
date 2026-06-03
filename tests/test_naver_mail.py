@@ -1,6 +1,6 @@
 """Tests for src.integrations.naver_mail — message parsing, header decode, state I/O."""
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -38,8 +38,9 @@ def test_decode_header_value_mixed():
 # ── Body extraction ─────────────────────────────────────────────────────
 
 def test_extract_body_plain_text():
-    from src.integrations.naver_mail import _extract_body
     import email as email_lib
+
+    from src.integrations.naver_mail import _extract_body
     msg = email_lib.message_from_string(
         "Content-Type: text/plain; charset=utf-8\r\n\r\nHello plain text"
     )
@@ -48,8 +49,9 @@ def test_extract_body_plain_text():
 
 
 def test_extract_body_html_fallback():
-    from src.integrations.naver_mail import _extract_body
     import email as email_lib
+
+    from src.integrations.naver_mail import _extract_body
     raw = (
         "MIME-Version: 1.0\r\n"
         "Content-Type: multipart/alternative; boundary=bnd\r\n"
@@ -66,8 +68,9 @@ def test_extract_body_html_fallback():
 
 
 def test_extract_body_korean():
-    from src.integrations.naver_mail import _extract_body
     from email.message import EmailMessage
+
+    from src.integrations.naver_mail import _extract_body
     msg = EmailMessage()
     msg.set_content("안녕하세요 반갑습니다", charset="utf-8")
     body = _extract_body(msg)
@@ -96,8 +99,9 @@ def test_parse_message_basic():
 
 
 def test_parse_message_korean_subject():
-    from src.integrations.naver_mail import parse_message
     import email as email_lib
+
+    from src.integrations.naver_mail import parse_message
     # Build message with Korean encoded subject
     msg = email_lib.message_from_string(
         "From: sender@example.com\r\n"

@@ -19,10 +19,10 @@ import hashlib
 import json
 import os
 import time
+import urllib.error
+import urllib.request
 from datetime import datetime
 from pathlib import Path
-import urllib.request
-import urllib.error
 
 KST = __import__("datetime").timezone(__import__("datetime").timedelta(hours=9))
 

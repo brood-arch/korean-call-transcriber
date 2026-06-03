@@ -83,7 +83,7 @@ def test_check_all_missing_files(tmp_path):
 
 
 def test_check_all_fresh_files(tmp_path):
-    from src.pipeline.validate_state import check_all, EXPECTED_FILES
+    from src.pipeline.validate_state import EXPECTED_FILES, check_all
     for name in EXPECTED_FILES:
         fpath = tmp_path / name
         if name.endswith(".json"):

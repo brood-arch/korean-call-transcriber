@@ -16,12 +16,13 @@ import json
 import os
 import re
 import sys
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from collections import defaultdict
 
 try:
-    from src.pipeline.paths import OBSIDIAN_VAULT, STATE_DIR, TRANSCRIPT_DIR as SOURCE_DIR
+    from src.pipeline.paths import OBSIDIAN_VAULT, STATE_DIR
+    from src.pipeline.paths import TRANSCRIPT_DIR as SOURCE_DIR
 except Exception:
     SOURCE_DIR = Path(os.environ.get("KCT_TRANSCRIPT_DIR", "output/transcripts"))
     OBSIDIAN_VAULT = Path(os.environ.get("OBSIDIAN_VAULT", "output/obsidian"))

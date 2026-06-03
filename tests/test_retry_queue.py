@@ -3,7 +3,6 @@ from pathlib import Path
 
 import pytest
 
-
 KST = timezone(timedelta(hours=9))
 
 

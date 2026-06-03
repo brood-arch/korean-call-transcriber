@@ -141,8 +141,9 @@ def test_load_nonexistent(tmp_path):
 # ── Graph statistics ─────────────────────────────────────────────────────
 
 def test_empty_graph_stats():
-    from src.knowledge.graph import KnowledgeGraph
     import tempfile
+
+    from src.knowledge.graph import KnowledgeGraph
     with tempfile.TemporaryDirectory() as td:
         from pathlib import Path
         g = KnowledgeGraph(graph_path=Path(td) / "empty.json")

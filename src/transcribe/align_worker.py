@@ -20,11 +20,11 @@ from pathlib import Path
 os.environ["PATH"] = str(Path(sys.executable).parent) + os.pathsep + os.environ.get("PATH", "")
 os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 import warnings
+
 warnings.filterwarnings("ignore")
 
 import numpy as np  # noqa: E402
 import torch  # noqa: E402
-
 
 # ── Logging ──────────────────────────────────────────────────────────────
 LOG = Path(os.environ.get("ALIGN_LOG", "logs/align_whisperx.log"))

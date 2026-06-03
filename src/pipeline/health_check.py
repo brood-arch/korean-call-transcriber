@@ -4,13 +4,13 @@
 import json
 import os
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from datetime import datetime, timezone, timedelta
 
 KST = timezone(timedelta(hours=9))
 
 try:
-    from pipeline_paths import TRANSCRIPT_DIR, AUDIO_DIR, STATE_DIR
+    from pipeline_paths import AUDIO_DIR, STATE_DIR, TRANSCRIPT_DIR
 except Exception:
     TRANSCRIPT_DIR = Path(os.environ.get("TRANSCRIPT_DIR", "./data/transcripts"))
     AUDIO_DIR = Path(os.environ.get("AUDIO_DIR", "./data/audio"))

@@ -14,11 +14,11 @@ All credentials are read from environment variables; no hardcoded secrets.
 """
 from __future__ import annotations
 
-import imaplib
 import email as email_lib
-from email.header import decode_header
+import imaplib
 import os
 from datetime import datetime
+from email.header import decode_header
 from typing import Optional
 
 # Gmail IMAP settings

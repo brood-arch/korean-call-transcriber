@@ -11,10 +11,10 @@ import argparse
 import json
 import os
 import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-import urllib.request
-import urllib.error
 
 KST = timezone(timedelta(hours=9))
 

@@ -11,11 +11,11 @@ from __future__ import annotations
 import json
 import re
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from src.pipeline.utils import safe_write_json, safe_read_json
+from src.pipeline.utils import safe_read_json, safe_write_json
 
 try:
     from src.pipeline.paths import STATE_DIR, WORKSPACE
@@ -51,7 +51,7 @@ _rules_cache: dict = {}
 def load_rules() -> dict[str, Any]:
     """Load rules with hot-reload support (non-recursive)."""
     global _rules_mtime, _rules_cache
-    
+
     # Fast path: cache is valid and file hasn't changed
     if _rules_cache and RULES_PATH.exists():
         try:
@@ -60,27 +60,27 @@ def load_rules() -> dict[str, Any]:
                 return _rules_cache
         except Exception:
             pass
-    
+
     # Reload from disk
     if not RULES_PATH.exists():
         safe_write_json(RULES_PATH, DEFAULT_RULES, origin="transcription_corrections")
-    
+
     try:
         data = safe_read_json(RULES_PATH, default=DEFAULT_RULES.copy())
     except Exception:
         data = DEFAULT_RULES.copy()
-    
+
     if not isinstance(data, dict):
         data = DEFAULT_RULES.copy()
     data.setdefault("exact_replacements", [])
     data.setdefault("aliases", [])
-    
+
     _rules_cache = data
     try:
         _rules_mtime = RULES_PATH.stat().st_mtime
     except Exception:
         _rules_mtime = 0.0
-    
+
     return data
 
 

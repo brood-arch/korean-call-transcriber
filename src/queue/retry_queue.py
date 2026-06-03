@@ -40,7 +40,7 @@ from typing import Any, Callable, Iterable
 KST = timezone(timedelta(hours=9))
 
 try:
-    from src.pipeline.paths import STATE_DIR, LOG_DIR, WORKSPACE
+    from src.pipeline.paths import LOG_DIR, STATE_DIR, WORKSPACE
 except Exception:
     WORKSPACE = Path(os.environ.get("KCT_WORKSPACE", Path.cwd()))
     STATE_DIR = Path(os.environ.get("KCT_STATE_DIR", WORKSPACE / "state"))

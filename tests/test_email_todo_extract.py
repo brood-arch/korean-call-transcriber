@@ -1,7 +1,7 @@
 """Tests for src.integrations.email_todo_extract — promo filter, exclusions, state, LLM mock."""
 
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 

@@ -4,7 +4,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-
 # ── Classification logic (no IMAP) ──────────────────────────────────────
 
 def test_classify_ad_multiple_keywords():
@@ -118,8 +117,9 @@ def test_decode_mime_words_mixed():
 # ── Email body extraction ───────────────────────────────────────────────
 
 def test_get_email_body_plain():
-    from src.integrations.gmail_classifier import get_email_body
     import email as email_lib
+
+    from src.integrations.gmail_classifier import get_email_body
     msg = email_lib.message_from_string(
         "Content-Type: text/plain; charset=utf-8\r\n\r\nHello body"
     )
@@ -128,8 +128,9 @@ def test_get_email_body_plain():
 
 
 def test_get_email_body_multipart():
-    from src.integrations.gmail_classifier import get_email_body
     import email as email_lib
+
+    from src.integrations.gmail_classifier import get_email_body
     raw = (
         "From: test@test.com\r\n"
         "Subject: Test\r\n"
@@ -174,8 +175,9 @@ def test_get_credentials_present(monkeypatch):
 
 def test_scan_inbox_mocked(monkeypatch):
     """Verify scan_inbox classifies emails using mocked IMAP."""
-    from src.integrations.gmail_classifier import scan_inbox
     from email.message import EmailMessage
+
+    from src.integrations.gmail_classifier import scan_inbox
 
     def make_message(subject, sender, body):
         msg = EmailMessage()

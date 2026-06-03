@@ -69,7 +69,7 @@ def test_normalize_sms_payload_preserves_raw():
 
 def test_extract_sms_todos_returns_empty():
     """Default implementation returns empty list."""
-    from src.integrations.sms_handler import extract_sms_todos, SMSMessage
+    from src.integrations.sms_handler import SMSMessage, extract_sms_todos
     sms = SMSMessage(sender="A", message="test", timestamp="2026-01-01T00:00:00")
     todos = extract_sms_todos(sms)
     assert isinstance(todos, list)
@@ -79,7 +79,7 @@ def test_extract_sms_todos_returns_empty():
 # ── SMS to TODO entry conversion ────────────────────────────────────────
 
 def test_sms_to_todo_entry_enriches():
-    from src.integrations.sms_handler import sms_to_todo_entry, SMSMessage
+    from src.integrations.sms_handler import SMSMessage, sms_to_todo_entry
     sms = SMSMessage(
         sender="+82-10-1234",
         message="test",
@@ -100,14 +100,14 @@ def test_sms_to_todo_entry_enriches():
 
 
 def test_sms_to_todo_entry_empty():
-    from src.integrations.sms_handler import sms_to_todo_entry, SMSMessage
+    from src.integrations.sms_handler import SMSMessage, sms_to_todo_entry
     sms = SMSMessage(sender="A", message="test", timestamp="2026-01-01")
     entries = sms_to_todo_entry(sms, [])
     assert entries == []
 
 
 def test_sms_to_todo_entry_preserves_original_fields():
-    from src.integrations.sms_handler import sms_to_todo_entry, SMSMessage
+    from src.integrations.sms_handler import SMSMessage, sms_to_todo_entry
     sms = SMSMessage(sender="B", message="test", timestamp="2026-01-01")
     todos = [{"title": "Task", "priority": "low", "custom_field": "value"}]
     entries = sms_to_todo_entry(sms, todos)

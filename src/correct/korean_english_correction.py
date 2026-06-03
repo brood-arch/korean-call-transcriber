@@ -225,15 +225,15 @@ if __name__ == "__main__":
                         help="Correction mode: quick (dict) or llm (GLM-5)")
     parser.add_argument("--screenshot", help="Optional screenshot file path for multimodal context")
     args = parser.parse_args()
-    
+
     if args.text:
         input_text = " ".join(args.text)
     else:
         input_text = sys.stdin.read().strip()
-    
+
     if not input_text:
         print("Usage: python korean_english_correction.py \"텍스트\" [--mode llm] [--screenshot path]")
         sys.exit(1)
-    
+
     result = correct(input_text, mode=args.mode, screenshot_path=args.screenshot)
     print(result)

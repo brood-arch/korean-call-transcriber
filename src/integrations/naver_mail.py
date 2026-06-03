@@ -30,7 +30,7 @@ import json
 import os
 import re
 import sys
-from datetime import timezone, timedelta
+from datetime import timedelta, timezone
 from email.message import Message
 from pathlib import Path
 from typing import Optional
