@@ -356,15 +356,15 @@ def run_worker(
         ),
     )[: max(0, limit)]
 
-    # On native Windows, detect if we need shell=True for Unicode argv handling
-    _windows_shell_mode = (
+    # On native Windows, detect if we need env var for Unicode argv handling
+    _needs_env = (
         sys.platform == "win32"
         and runner is subprocess.run
     )
 
     def _build_cmd(entry):
         argv = command_for_entry(entry, workspace)
-        if _windows_shell_mode:
+        if _needs_env:
             # On Windows, pass Unicode file path via env var to avoid argv encoding issues
             env = os.environ.copy()
             env["TRANSCRIBE_FILE"] = _wsl_to_win_path(str(entry.get("source_path", ""))) if entry.get("source_path") else ""
@@ -394,8 +394,6 @@ def run_worker(
         try:
             if env:
                 cp = runner(argv, cwd=str(workspace), timeout=timeout_seconds, text=True, capture_output=True, env=env)
-            elif _windows_shell_mode:
-                cp = runner(argv, cwd=str(workspace), timeout=timeout_seconds, text=True, capture_output=True, shell=True)
             else:
                 cp = runner(argv, cwd=str(workspace), timeout=timeout_seconds, text=True, capture_output=True)
             rc = int(getattr(cp, "returncode", 1))

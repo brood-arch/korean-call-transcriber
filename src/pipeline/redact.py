@@ -8,13 +8,24 @@ import re
 # landline: 02-XXX-XXXX, area codes 031-064, toll-free 1588-XXXX / 16XX-XXXX
 _PHONE_RE = re.compile(
     r"(?<!\d)"
-    r"(?:\+82[- ]?)?"
     r"(?:"
-    r"01[016-9][- ]?\d{3,4}[- ]?\d{4}"  # mobile
-    r"|0[2-6][1-4]?[- ]?\d{3,4}[- ]?\d{4}"  # landline area
-    r"|0(?:70|80)[- ]?\d{3,4}[- ]?\d{4}"  # VoIP / toll
-    r"|15\d{2}[- ]?\d{4}"  # toll-free 1588 etc
-    r"|16\d{2}[- ]?\d{4}"  # toll-free 1644 etc
+    # International +82 prefix (no leading 0)
+    r"(?:\+82[- ]?)1[016-9][- ]?\d{3,4}[- ]?\d{4}"
+    r"|"
+    # Domestic 01x mobile
+    r"01[016-9][- ]?\d{3,4}[- ]?\d{4}"
+    r"|"
+    # Landline area codes
+    r"0[2-6][1-4]?[- ]?\d{3,4}[- ]?\d{4}"
+    r"|"
+    # VoIP / toll
+    r"0(?:70|80)[- ]?\d{3,4}[- ]?\d{4}"
+    r"|"
+    # Toll-free 1588 etc
+    r"15\d{2}[- ]?\d{4}"
+    r"|"
+    # Toll-free 1644 etc
+    r"16\d{2}[- ]?\d{4}"
     r")"
     r"(?!\d)"
 )

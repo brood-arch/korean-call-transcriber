@@ -24,7 +24,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from src.config import EXIT_CONFIG, EXIT_OK, EXIT_PARTIAL, TRANSCRIPT_DIR
+from src.config import EXIT_CONFIG, EXIT_OK, EXIT_PARTIAL, TRANSCRIPT_DIR, WORKSPACE
 from src.pipeline.utils import compress_transcript, fallback_summary
 
 from .client import call_llm_extract, get_llm_config
@@ -46,8 +46,6 @@ from .state import (
 )
 
 log = logging.getLogger(__name__)
-
-WORKSPACE = Path(__file__).resolve().parents[2]
 
 # Lazy import for fast_score_transcript (avoids circular / heavy init at module load)
 _fast_score_fn = None
@@ -110,7 +108,7 @@ class IntegratedPipeline:
         if self.today_only:
             today_str = datetime.now(KST).strftime("%Y%m%d")
             all_files = [f for f in all_files if today_str in f.stem]
-            print(f"--today mode: filtering for date {today_str}")
+            log.info("--today mode: filtering for date %s", today_str)
 
         # Skip already processed files (same hash = unchanged)
         processed = load_processed_index(self.processed_index_file)
@@ -122,7 +120,7 @@ class IntegratedPipeline:
 
         skipped = len(all_files) - len(new_files)
         if skipped > 0:
-            print(f"Skipped {skipped} already-processed (unchanged) files")
+            log.info("Skipped %d already-processed (unchanged) files", skipped)
 
         return new_files
 
@@ -134,9 +132,9 @@ class IntegratedPipeline:
 
         files = self.get_transcription_files()
         total_files = len(files)
-        print(f"Found {total_files} transcription files")
+        log.info("Found %d transcription files", total_files)
         if total_files == 0:
-            print("No files. Exiting.")
+            log.info("No files. Exiting.")
             return
 
         total_batches = (total_files + self.batch_size - 1) // self.batch_size
@@ -145,12 +143,12 @@ class IntegratedPipeline:
         # (이미 처리된 파일은 get_transcription_files()에서 해시로 걸러짐)
         if self.today_only:
             start_batch = self.start_batch_override
-            print(f"--today mode: always starting from batch {start_batch} (checkpoint ignored for batch index)")
+            log.info("--today mode: always starting from batch %d (checkpoint ignored for batch index)", start_batch)
         else:
             # P2-C8: --start-batch 인자가 있으면 체크포인트보다 우선
             start_batch = max(load_checkpoint(self.checkpoint_file, today_only=self.today_only), self.start_batch_override)
-        print(f"Total batches: {total_batches}, starting from: {start_batch}")
-        print(f"Run ID: {self.run_id}")
+        log.info("Total batches: %d, starting from: %d", total_batches, start_batch)
+        log.info("Run ID: %s", self.run_id)
 
         try:
             for batch_idx in range(start_batch, total_batches):
@@ -165,12 +163,12 @@ class IntegratedPipeline:
                         try:
                             existing = json.loads(batch_file.read_text(encoding="utf-8"))
                             if existing.get("status") == "done":
-                                print(f"  [{batch_idx:04d}] SKIP (already done)")
+                                log.info("  [%04d] SKIP (already done)", batch_idx)
                                 continue
                         except Exception as exc:
                             logging.debug("Failed to inspect existing batch %s: %s", batch_file, exc)
 
-                print(f"  [{batch_idx:04d}/{total_batches-1}] Processing {len(batch_files)} files...")
+                log.info("  [%04d/%04d] Processing %d files...", batch_idx, total_batches - 1, len(batch_files))
 
                 batch_results = []
                 batch_errors = []
@@ -298,39 +296,40 @@ class IntegratedPipeline:
                     self.stats["batches_done"] += 1
                     save_checkpoint(self.checkpoint_file, batch_idx, total_batches, self.stats, self.run_id)
 
-                print(f"    Done: {self.stats['todos']} todos, {self.stats['entities']} entities, {self.stats['products']} products, {self.stats['money']} money, {self.stats['risks']} risks, {self.stats['corrections']} corrections"
-                      f"| {len(batch_errors)} errors")
+                log.info("    Done: %d todos, %d entities, %d products, %d money, %d risks, %d corrections | %d errors",
+                         self.stats['todos'], self.stats['entities'], self.stats['products'],
+                         self.stats['money'], self.stats['risks'], self.stats['corrections'], len(batch_errors))
 
                 if batch_idx < total_batches - 1:
                     time.sleep(self.api_delay)
 
         except KeyboardInterrupt:
-            print(f"\nInterrupted at batch {batch_idx}. Run ID: {self.run_id}")
-            print(f"Resume with: python extract_all.py --start-batch {batch_idx}")
+            log.warning("\nInterrupted at batch %d. Run ID: %s", batch_idx, self.run_id)
+            log.info("Resume with: python extract_all.py --start-batch %d", batch_idx)
             save_checkpoint(self.checkpoint_file, batch_idx, total_batches, self.stats, self.run_id)
 
         # Final summary
-        print(f"\n{'='*60}")
-        print("INTEGRATED EXTRACTION COMPLETE")
-        print(f"{'='*60}")
-        print(f"Run ID:       {self.run_id}")
-        print(f"Batches:      {self.stats['batches_done']}/{total_batches}")
-        print(f"Summaries:    {self.stats['summary']}")
-        print(f"TODOs:        {self.stats['todos']}")
-        print(f"Appointments: {self.stats['appointments']}")
-        print(f"Entities:     {self.stats['entities']}")
-        print(f"Products:     {self.stats['products']}")
-        print(f"Money:        {self.stats['money']}")
-        print(f"Risks:        {self.stats['risks']}")
-        print(f"Corrections:  {self.stats['corrections']}")
-        log.info(f"Errors:       {self.stats['errors']}")
-        print(f"Dropped:      {self.stats.get('fast_score_dropped', 0)} (fast_score pre-filter)")
-        log.info(f"Fallbacks:    {self.stats.get('fallbacks', 0)} (LLM failed, heuristic)")
-        print(f"New TODOs:    {self.stats.get('new_todos', 0)} (synced to persistent_todos.json)")
+        log.info("\n" + "=" * 60)
+        log.info("INTEGRATED EXTRACTION COMPLETE")
+        log.info("=" * 60)
+        log.info("Run ID:       %s", self.run_id)
+        log.info("Batches:      %d/%d", self.stats['batches_done'], total_batches)
+        log.info("Summaries:    %d", self.stats['summary'])
+        log.info("TODOs:        %d", self.stats['todos'])
+        log.info("Appointments: %d", self.stats['appointments'])
+        log.info("Entities:     %d", self.stats['entities'])
+        log.info("Products:     %d", self.stats['products'])
+        log.info("Money:        %d", self.stats['money'])
+        log.info("Risks:        %d", self.stats['risks'])
+        log.info("Corrections:  %d", self.stats['corrections'])
+        log.info("Errors:       %d", self.stats['errors'])
+        log.info("Dropped:      %d (fast_score pre-filter)", self.stats.get('fast_score_dropped', 0))
+        log.info("Fallbacks:    %d (LLM failed, heuristic)", self.stats.get('fallbacks', 0))
+        log.info("New TODOs:    %d (synced to persistent_todos.json)", self.stats.get('new_todos', 0))
         if self._last_notifications:
-            print(f"Notifications:{len(self._last_notifications)} attempted")
-        print("~60-70% fewer LLM calls vs. separate scripts")
-        print(f"{'='*60}")
+            log.info("Notifications: %d attempted", len(self._last_notifications))
+        log.info("~60-70% fewer LLM calls vs. separate scripts")
+        log.info("=" * 60)
 
         # TODO alert fallback: print full active report only if Telegram did not
         # successfully deliver a new-TODO notification.

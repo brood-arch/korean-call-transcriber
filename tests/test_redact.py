@@ -27,9 +27,17 @@ class TestPhoneRedaction:
 
     def test_plus82_prefix(self):
         result = redact_sensitive_text("Call +82-10-1234-5678")
-        # +82 form may or may not be caught depending on pattern
-        # At minimum, the 10-digit sequence should be redacted if pattern matches
-        assert "REDACTED" in result or "1234-5678" not in result or True  # accepted until full +82 support
+        assert "REDACTED" in result
+        assert "10-1234-5678" not in result
+
+    def test_plus82_with_hyphen(self):
+        assert "REDACTED" in redact_sensitive_text("+82-10-1234-5678")
+
+    def test_plus82_with_space(self):
+        assert "REDACTED" in redact_sensitive_text("+82 10 1234 5678")
+
+    def test_plus82_no_separator(self):
+        assert "REDACTED" in redact_sensitive_text("+821012345678")
 
     def test_normal_number_not_redacted(self):
         text = "Model ABC-1234-5678"

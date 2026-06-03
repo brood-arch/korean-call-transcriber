@@ -51,24 +51,15 @@ except Exception:
         value = str(text or "")
         return value[-limit:] if limit is not None else value
 
-try:
-    from src.config import (
-        KCT_ENABLE_SHELL_JOBS,
-        MINIONS_DB_HOST,
-        MINIONS_DB_NAME,
-        MINIONS_DB_PASS,
-        MINIONS_DB_PORT,
-        MINIONS_DB_URL,
-        MINIONS_DB_USER,
-    )
-except Exception:
-    MINIONS_DB_URL = os.environ.get("MINIONS_DB_URL", "")
-    MINIONS_DB_HOST = os.environ.get("MINIONS_DB_HOST", "localhost")
-    MINIONS_DB_PORT = os.environ.get("MINIONS_DB_PORT", "5432")
-    MINIONS_DB_NAME = os.environ.get("MINIONS_DB_NAME", "minions")
-    MINIONS_DB_USER = os.environ.get("MINIONS_DB_USER", "minions")
-    MINIONS_DB_PASS = os.environ.get("MINIONS_DB_PASS", "")
-    KCT_ENABLE_SHELL_JOBS = os.environ.get("KCT_ENABLE_SHELL_JOBS", "0")
+from src.config import (
+    KCT_ENABLE_SHELL_JOBS,
+    MINIONS_DB_HOST,
+    MINIONS_DB_NAME,
+    MINIONS_DB_PASS,
+    MINIONS_DB_PORT,
+    MINIONS_DB_URL,
+    MINIONS_DB_USER,
+)
 
 KST = timezone(timedelta(hours=9))
 

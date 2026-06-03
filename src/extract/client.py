@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+import warnings as _w
 
 from src.config import get_llm_config as _resolve_llm_config
 from src.pipeline.redact import redact_sensitive_text
@@ -253,4 +254,6 @@ def call_llm_extract(api_key: str, content: str, run_id: str = "",
     return None
 
 
-call_zai_extract = call_llm_extract
+def call_zai_extract(*args, **kwargs):
+    _w.warn("call_zai_extract is deprecated; use call_llm_extract", DeprecationWarning, stacklevel=2)
+    return call_llm_extract(*args, **kwargs)

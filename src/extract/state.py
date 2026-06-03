@@ -13,6 +13,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from src.config import WORKSPACE
 from src.pipeline.redact import redact_sensitive_text
 from src.pipeline.utils import (
     normalize_source,
@@ -22,8 +23,6 @@ from src.pipeline.utils import (
     safe_save_json,
 )
 from src.todo.persistent_store import merge_todos, todo_key
-
-WORKSPACE = Path(__file__).resolve().parents[2]
 
 KST = timezone(timedelta(hours=9))
 log = logging.getLogger(__name__)
@@ -53,13 +52,7 @@ def load_processed_index(processed_index_file: Path) -> dict:
 
 def save_processed_index(processed_index_file: Path, index: dict):
     """Save processed files index."""
-    try:
-        from safe_io import safe_write_json
-        safe_write_json(processed_index_file, index, origin="integrated_pipeline")
-    except ImportError:
-        tmp = processed_index_file.with_suffix(".tmp")
-        tmp.write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(processed_index_file)
+    safe_save_json(processed_index_file, index, origin="integrated_pipeline")
 
 
 def load_checkpoint(checkpoint_file: Path, today_only: bool = False) -> int:
@@ -71,7 +64,7 @@ def load_checkpoint(checkpoint_file: Path, today_only: bool = False) -> int:
                 today_str = datetime.now(KST).strftime("%Y%m%d")
                 cp_date = cp.get("last_updated", "")[:10].replace("-", "")
                 if cp_date != today_str:
-                    print(f"Checkpoint stale (from {cp.get('last_updated', '')}), resetting for today")
+                    log.info("Checkpoint stale (from %s), resetting for today", cp.get('last_updated', ''))
                     return 0
             return cp.get("last_completed_batch", -1) + 1
         except Exception as exc:
@@ -88,13 +81,7 @@ def save_checkpoint(checkpoint_file: Path, batch_idx: int, total: int, stats: di
         "run_id": run_id,
         "stats": stats,
     }
-    try:
-        from safe_io import safe_write_json
-        safe_write_json(checkpoint_file, data, origin="integrated_pipeline")
-    except ImportError:
-        tmp = checkpoint_file.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(checkpoint_file)
+    safe_save_json(checkpoint_file, data, origin="integrated_pipeline")
 
 
 def save_batch_result(state_dir: Path, batch_idx: int, batch_files: list, results: list, errors: list, status: str, run_id: str):
@@ -109,11 +96,7 @@ def save_batch_result(state_dir: Path, batch_idx: int, batch_files: list, result
         "status": status,
     }
     batch_file = state_dir / f"batch_{batch_idx:04d}.json"
-    try:
-        from safe_io import safe_write_json
-        safe_write_json(batch_file, output, origin="integrated_pipeline")
-    except ImportError:
-        safe_save_json(batch_file, output, origin="integrated_pipeline")
+    safe_save_json(batch_file, output, origin="integrated_pipeline")
 
 
 # --- Persistent TODO sync ---
@@ -378,6 +361,7 @@ def notify_new_items(new_todos: list, new_appointments: list | None = None, acti
 
 def print_todo_alert():
     """Print full active TODO report for immediate notification."""
+    # NOTE: requires scripts/todo_report.py in WORKSPACE (not in public repo)
     try:
         result = subprocess.run(
             [sys.executable, str(WORKSPACE / "scripts" / "todo_report.py"), "--status", "active"],
