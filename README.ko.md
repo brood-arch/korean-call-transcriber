@@ -113,8 +113,8 @@ kct-sync-obsidian --all
 | 변수 | 설명 | 기본값 |
 |---|---|---|
 | `LLM_API_KEY` | LLM API 키 (`ZAI_API_KEY`도 이전 호환용으로 지원) | (필수) |
-| `LLM_BASE_URL` | OpenAI 호환 API 베이스 URL (`ZAI_BASE_URL`도 지원) | `https://api.z.ai/api/coding/paas/v4` |
-| `LLM_MODEL` | 모델명 | `glm-5.1` |
+| `LLM_BASE_URL` | OpenAI 호환 API 베이스 URL (`ZAI_BASE_URL`도 지원) | `https://api.openai.com/v1` |
+| `LLM_MODEL` | 모델명 | `gpt-4o-mini` |
 | `LLM_DISABLE_THINKING` | GLM thinking trace 비활성화 (`auto`, `true`, `false`) | `auto` |
 | `KCT_AUDIO_DIR` | 오디오 소스 디렉터리 (`AUDIO_DIR`도 이전 호환용으로 지원) | `data/audio` |
 | `KCT_TRANSCRIPT_DIR` | 전사 결과 출력 디렉터리 (`TRANSCRIPT_DIR`도 이전 호환용으로 지원) | `output/transcripts` |
