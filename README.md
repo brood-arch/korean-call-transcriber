@@ -1,6 +1,17 @@
 # korean-call-transcriber
 
+[![PyPI version](https://img.shields.io/pypi/v/korean-call-transcriber.svg)](https://pypi.org/project/korean-call-transcriber/) [![Python](https://img.shields.io/pypi/pyversions/korean-call-transcriber.svg)](https://pypi.org/project/korean-call-transcriber/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![CI](https://github.com/brood-arch/korean-call-transcriber/actions/workflows/ci.yml/badge.svg)](https://github.com/brood-arch/korean-call-transcriber/actions/workflows/ci.yml)
+
 Korean phone call transcription pipeline with Whisper + speaker diarization, auto TODO/schedule/entity extraction, and Obsidian sync.
+
+```bash
+pip install korean-call-transcriber
+```
+
+```bash
+# GPU support (transcription)
+pip install korean-call-transcriber[gpu]
+```
 
 ## Features
 
