@@ -8,10 +8,10 @@ Output: writes <segments_file>_result.json with aligned/diarized segments.
 This script ONLY imports whisperx (no faster_whisper/ctranslate2).
 """
 
-import logging
 import argparse
 import gc
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -33,7 +33,7 @@ log = logging.getLogger(__name__)
 LOG = Path(os.environ.get("ALIGN_LOG", "logs/align_whisperx.log"))
 
 
-def log(msg: str) -> None:
+def _log_to_file(msg: str) -> None:
     ts = time.strftime("%Y-%m-%d %H:%M:%S")
     line = f"{ts} {msg}"
     try:
@@ -57,7 +57,7 @@ def get_gpu_free_mb() -> int:
         if r.returncode == 0:
             return int(r.stdout.strip().split("\n")[0])
     except Exception as exc:
-        log(f"GPU memory query failed: {exc}")
+        _log_to_file(f"GPU memory query failed: {exc}")
     return -1
 
 
@@ -66,11 +66,11 @@ def resolve_device(requested: str = "cuda") -> str:
     if requested == "cuda" and torch.cuda.is_available():
         free = get_gpu_free_mb()
         if free > 0 and free < 1024:
-            log(f"GPU free={free}MB < 1024MB threshold, falling back to CPU")
+            _log_to_file(f"GPU free={free}MB < 1024MB threshold, falling back to CPU")
             return "cpu"
         return "cuda"
     if requested == "cuda" and not torch.cuda.is_available():
-        log("CUDA not available, falling back to CPU")
+        _log_to_file("CUDA not available, falling back to CPU")
         return "cpu"
     return requested
 
@@ -88,13 +88,13 @@ def load_audio(file: str, sr: int = 16000, retries: int = 2) -> np.ndarray:
             return np.frombuffer(out, np.int16).flatten().astype(np.float32) / 32768.0
         except subprocess.TimeoutExpired as e:
             last_err = e
-            log(f"load_audio timeout (attempt {attempt}/{retries})")
+            _log_to_file(f"load_audio timeout (attempt {attempt}/{retries})")
         except subprocess.CalledProcessError as e:
             last_err = e
-            log(f"load_audio ffmpeg error rc={e.returncode} (attempt {attempt}/{retries})")
+            _log_to_file(f"load_audio ffmpeg error rc={e.returncode} (attempt {attempt}/{retries})")
         except Exception as e:
             last_err = e
-            log(f"load_audio unexpected error: {e} (attempt {attempt}/{retries})")
+            _log_to_file(f"load_audio unexpected error: {e} (attempt {attempt}/{retries})")
         if attempt < retries:
             time.sleep(1)
     raise RuntimeError(f"load_audio failed after {retries} attempts: {last_err}")
@@ -117,7 +117,7 @@ def _load_segments(segments_path: str) -> tuple[list, str | None]:
     try:
         return json.loads(Path(segments_path).read_text(encoding="utf-8")), None
     except Exception as e:
-        log(f"FATAL: cannot read segments file: {e}")
+        _log_to_file(f"FATAL: cannot read segments file: {e}")
         return [], str(e)
 
 
@@ -130,33 +130,33 @@ def _run_alignment(
     """
     try:
         import whisperx
-        log("Loading audio for alignment...")
+        _log_to_file("Loading audio for alignment...")
         audio = load_audio(audio_path)
-        log("Loading align model...")
+        _log_to_file("Loading align model...")
         align_model, metadata = whisperx.load_align_model(language_code="ko", device=device)
-        log(f"Aligning {len(segments)} segments...")
+        _log_to_file(f"Aligning {len(segments)} segments...")
         t0 = time.time()
         result = whisperx.align(segments, align_model, metadata, audio, device)
         elapsed = time.time() - t0
         segs = result.get("segments", []) if isinstance(result, dict) else result.segments
-        log(f"Align OK: {len(segs)} segments in {elapsed:.1f}s")
+        _log_to_file(f"Align OK: {len(segs)} segments in {elapsed:.1f}s")
         del align_model, audio
         gc.collect()
         torch.cuda.empty_cache()
         return segs, True, None
     except ImportError as e:
         msg = f"whisperx import failed: {e}"
-        log(f"ALIGN_FAIL: {msg}")
+        _log_to_file(f"ALIGN_FAIL: {msg}")
         return segments, False, msg
     except RuntimeError as e:
         msg = str(e)
-        log(f"ALIGN_FAIL: {msg}")
+        _log_to_file(f"ALIGN_FAIL: {msg}")
         if device == "cuda" and ("out of memory" in msg.lower() or "cuda" in msg.lower()):
             return _retry_alignment_cpu(segments, audio_path, msg)
         return segments, False, msg
     except Exception as e:
         msg = str(e)
-        log(f"ALIGN_FAIL: {msg}")
+        _log_to_file(f"ALIGN_FAIL: {msg}")
         return segments, False, msg
 
 
@@ -164,7 +164,7 @@ def _retry_alignment_cpu(
     segments: list, audio_path: str, original_error: str,
 ) -> tuple[list, bool, str | None]:
     """Retry alignment on CPU after CUDA failure."""
-    log("Retrying alignment on CPU...")
+    _log_to_file("Retrying alignment on CPU...")
     try:
         import whisperx
         gc.collect()
@@ -175,13 +175,13 @@ def _retry_alignment_cpu(
         result = whisperx.align(segments, align_model, metadata, audio, "cpu")
         elapsed = time.time() - t0
         segs = result.get("segments", []) if isinstance(result, dict) else result.segments
-        log(f"Align OK (CPU retry): {len(segs)} segments in {elapsed:.1f}s")
+        _log_to_file(f"Align OK (CPU retry): {len(segs)} segments in {elapsed:.1f}s")
         del align_model, audio
         gc.collect()
         return segs, True, None
     except Exception as e2:
         msg = f"CPU retry also failed: {e2}"
-        log(f"ALIGN_FAIL (CPU retry): {msg}")
+        _log_to_file(f"ALIGN_FAIL (CPU retry): {msg}")
         return segments, False, msg
 
 
@@ -193,22 +193,22 @@ def _run_diarization(
         import whisperx
         from whisperx.diarize import DiarizationPipeline
         hf_token = Path(token_path).read_text(encoding="utf-8").strip()
-        log("Loading diarization model...")
+        _log_to_file("Loading diarization model...")
         dm = DiarizationPipeline(token=hf_token, device=device)
-        log("Running diarization (min=2, max=2 speakers)...")
+        _log_to_file("Running diarization (min=2, max=2 speakers)...")
         t0 = time.time()
         diar = dm(audio_path, min_speakers=2, max_speakers=2)
         elapsed = time.time() - t0
         result_d = whisperx.assign_word_speakers(diar, {"segments": segs_aligned})
         segs_final = result_d.get("segments", segs_aligned)
-        log(f"Diarize OK in {elapsed:.1f}s")
+        _log_to_file(f"Diarize OK in {elapsed:.1f}s")
         del dm, diar
         gc.collect()
         torch.cuda.empty_cache()
         return segs_final, True, None
     except Exception as e:
         msg = str(e)
-        log(f"DIARIZE_FAIL: {msg}")
+        _log_to_file(f"DIARIZE_FAIL: {msg}")
         return segs_aligned, False, msg
 
 
@@ -235,14 +235,14 @@ def _write_result(out_path: Path, payload: dict) -> bool:
         tmp_path.replace(out_path)
         return True
     except Exception as e:
-        log(f"FATAL: cannot write result: {e}")
+        _log_to_file(f"FATAL: cannot write result: {e}")
         return False
 
 
 def main() -> int:
     args = _parse_args()
     device = resolve_device("cuda")
-    log(f"Worker start: audio={Path(args.audio).name} device={device}")
+    _log_to_file(f"Worker start: audio={Path(args.audio).name} device={device}")
 
     segments, load_err = _load_segments(args.segments)
     if load_err:
@@ -260,9 +260,9 @@ def main() -> int:
     diarize_ok = False
     diarize_error: str | None = None
     if args.no_diarize:
-        log("Diarization skipped (--no-diarize)")
+        _log_to_file("Diarization skipped (--no-diarize)")
     elif not args.token:
-        log("Diarization skipped (no --token)")
+        _log_to_file("Diarization skipped (no --token)")
     else:
         segs_final, diarize_ok, diarize_error = _run_diarization(
             segs_aligned, args.audio, args.token, device,
@@ -287,7 +287,7 @@ def main() -> int:
     status_parts.append("align=ok" if align_ok else "align=fail")
     if not args.no_diarize and args.token:
         status_parts.append("diarize=ok" if diarize_ok else "diarize=fail")
-    log(f"OK: {len(output)} segments ({', '.join(status_parts)})")
+    _log_to_file(f"OK: {len(output)} segments ({', '.join(status_parts)})")
     return 0
 
 

@@ -171,7 +171,6 @@ def _classify_audio_gaps(
     cause_files,
 ):
     """Classify audio files missing transcripts."""
-    audio_path_for = _audio_path_getter(audio_by_stem)
     for stem, audio_path in sorted(audio_by_stem.items()):
         if stem in transcript_by_stem:
             continue

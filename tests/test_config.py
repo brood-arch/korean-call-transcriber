@@ -3,7 +3,6 @@
 import pytest
 
 
-
 class TestWorkspaceResolution:
     def test_default_workspace_is_cwd(self, monkeypatch):
         monkeypatch.delenv("KCT_WORKSPACE", raising=False)
@@ -99,6 +98,7 @@ class TestPathFromEnv:
         monkeypatch.delenv("KCT_AUDIO_DIR", raising=False)
         monkeypatch.delenv("AUDIO_DIR", raising=False)
         import importlib
+
         import src.config as cfg
         importlib.reload(cfg)
         assert cfg.AUDIO_DIR.is_absolute()
@@ -106,6 +106,7 @@ class TestPathFromEnv:
     def test_path_from_env_env_override(self, monkeypatch, tmp_path):
         monkeypatch.setenv("KCT_AUDIO_DIR", str(tmp_path / "custom_audio"))
         import importlib
+
         import src.config as cfg
         importlib.reload(cfg)
         assert cfg.AUDIO_DIR == (tmp_path / "custom_audio").resolve()
@@ -114,6 +115,7 @@ class TestPathFromEnv:
 class TestConstants:
     def test_exit_codes_are_int(self):
         import importlib
+
         import src.config as cfg
         importlib.reload(cfg)
         assert cfg.EXIT_OK == 0
@@ -126,6 +128,7 @@ class TestConstants:
         monkeypatch.delenv("WHISPER_MODEL", raising=False)
         monkeypatch.delenv("KCT_ENABLE_SHELL_JOBS", raising=False)
         import importlib
+
         import src.config as cfg
         importlib.reload(cfg)
         assert cfg.MY_NAME == "Me"
@@ -136,6 +139,7 @@ class TestConstants:
         monkeypatch.setenv("ZAI_API_KEY", "test-deprecated-key")
         monkeypatch.delenv("LLM_API_KEY", raising=False)
         import importlib
+
         import src.config as cfg
         importlib.reload(cfg)
         import logging
@@ -149,6 +153,7 @@ class TestLLMConfigExplicitKey:
     def test_explicit_api_key_overrides_env(self, monkeypatch):
         monkeypatch.setenv("LLM_API_KEY", "env-key")
         import importlib
+
         import src.config as cfg
         importlib.reload(cfg)
         config = cfg.get_llm_config(api_key="explicit-key")
@@ -158,6 +163,7 @@ class TestLLMConfigExplicitKey:
         monkeypatch.delenv("LLM_BASE_URL", raising=False)
         monkeypatch.delenv("ZAI_BASE_URL", raising=False)
         import importlib
+
         import src.config as cfg
         importlib.reload(cfg)
         config = cfg.get_llm_config()
@@ -166,6 +172,7 @@ class TestLLMConfigExplicitKey:
     def test_base_url_env_override(self, monkeypatch):
         monkeypatch.setenv("LLM_BASE_URL", "https://custom.api/v1/")
         import importlib
+
         import src.config as cfg
         importlib.reload(cfg)
         config = cfg.get_llm_config()
@@ -174,6 +181,7 @@ class TestLLMConfigExplicitKey:
     def test_disable_thinking_default(self, monkeypatch):
         monkeypatch.delenv("LLM_DISABLE_THINKING", raising=False)
         import importlib
+
         import src.config as cfg
         importlib.reload(cfg)
         config = cfg.get_llm_config()
@@ -182,6 +190,7 @@ class TestLLMConfigExplicitKey:
     def test_disable_thinking_env_override(self, monkeypatch):
         monkeypatch.setenv("LLM_DISABLE_THINKING", "TRUE")
         import importlib
+
         import src.config as cfg
         importlib.reload(cfg)
         config = cfg.get_llm_config()
@@ -189,6 +198,7 @@ class TestLLMConfigExplicitKey:
 
     def test_llmconfig_is_frozen(self, monkeypatch):
         import importlib
+
         import src.config as cfg
         importlib.reload(cfg)
         config = cfg.get_llm_config()
@@ -201,6 +211,7 @@ class TestPathFromEnvDeprecated:
     def test_path_from_env_with_deprecated(self, monkeypatch, tmp_path):
         monkeypatch.setenv("CHROMA_INDEX_DIR", str(tmp_path / "old_chroma"))
         import importlib
+
         import src.config as cfg
         importlib.reload(cfg)
         # Should resolve the deprecated CHROMA_INDEX_DIR
@@ -211,6 +222,7 @@ class TestMorePathConstants:
     def test_output_dir_under_workspace(self, monkeypatch, tmp_path):
         monkeypatch.setenv("KCT_WORKSPACE", str(tmp_path))
         import importlib
+
         import src.config as cfg
         importlib.reload(cfg)
         assert cfg.OUTPUT_DIR == tmp_path.resolve() / "output"
@@ -218,6 +230,7 @@ class TestMorePathConstants:
     def test_log_dir_under_workspace(self, monkeypatch, tmp_path):
         monkeypatch.setenv("KCT_WORKSPACE", str(tmp_path))
         import importlib
+
         import src.config as cfg
         importlib.reload(cfg)
         assert cfg.LOG_DIR == tmp_path.resolve() / "logs"
@@ -225,6 +238,7 @@ class TestMorePathConstants:
     def test_models_dir_under_workspace(self, monkeypatch, tmp_path):
         monkeypatch.setenv("KCT_WORKSPACE", str(tmp_path))
         import importlib
+
         import src.config as cfg
         importlib.reload(cfg)
         assert cfg.MODELS_DIR == tmp_path.resolve() / "models"
@@ -232,6 +246,7 @@ class TestMorePathConstants:
     def test_obsidian_vault_under_output(self, monkeypatch, tmp_path):
         monkeypatch.setenv("KCT_WORKSPACE", str(tmp_path))
         import importlib
+
         import src.config as cfg
         importlib.reload(cfg)
         assert cfg.OBSIDIAN_VAULT == tmp_path.resolve() / "output" / "obsidian"
@@ -241,6 +256,7 @@ class TestTranscriptionConstants:
     def test_whisper_compute_type_default(self, monkeypatch):
         monkeypatch.delenv("WHISPER_COMPUTE_TYPE", raising=False)
         import importlib
+
         import src.config as cfg
         importlib.reload(cfg)
         assert cfg.WHISPER_COMPUTE_TYPE == "float16"
@@ -248,6 +264,7 @@ class TestTranscriptionConstants:
     def test_transcribe_log_under_log_dir(self, monkeypatch, tmp_path):
         monkeypatch.setenv("KCT_WORKSPACE", str(tmp_path))
         import importlib
+
         import src.config as cfg
         importlib.reload(cfg)
         assert cfg.TRANSCRIBE_LOG == tmp_path.resolve() / "logs" / "transcribe_whisperx.log"
@@ -260,6 +277,7 @@ class TestMinionsConstants:
         monkeypatch.delenv("MINIONS_DB_NAME", raising=False)
         monkeypatch.delenv("MINIONS_DB_USER", raising=False)
         import importlib
+
         import src.config as cfg
         importlib.reload(cfg)
         assert cfg.MINIONS_DB_HOST == "localhost"
@@ -274,6 +292,7 @@ class TestNaverMailConstants:
         monkeypatch.delenv("NAVER_MAIL_PORT", raising=False)
         monkeypatch.delenv("NAVER_MAIL_LIMIT", raising=False)
         import importlib
+
         import src.config as cfg
         importlib.reload(cfg)
         assert cfg.NAVER_MAIL_HOST == "imap.naver.com"
@@ -285,6 +304,7 @@ class TestCorrectionsConstants:
     def test_corrections_paths_under_state(self, monkeypatch, tmp_path):
         monkeypatch.setenv("KCT_WORKSPACE", str(tmp_path))
         import importlib
+
         import src.config as cfg
         importlib.reload(cfg)
         assert cfg.CORRECTIONS_RULES_PATH == tmp_path.resolve() / "state" / "correction_rules.json"

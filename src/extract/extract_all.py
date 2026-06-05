@@ -337,12 +337,22 @@ class IntegratedPipeline:
         total_batches = (total_files + self.batch_size - 1) // self.batch_size
         start_batch = self._resolve_start_batch(total_batches)
 
+        self._last_batch_idx = start_batch
         try:
             self._run_batches(start_batch, total_batches, total_files, files, api_key)
         except KeyboardInterrupt:
-            log.warning("\nInterrupted at batch %d. Run ID: %s", batch_idx, self.run_id)
-            log.info("Resume with: python extract_all.py --start-batch %d", batch_idx)
-            save_checkpoint(self.checkpoint_file, batch_idx, total_batches, self.stats, self.run_id)
+            log.warning(
+                "\nInterrupted at batch %d. Run ID: %s",
+                self._last_batch_idx, self.run_id,
+            )
+            log.info(
+                "Resume with: python extract_all.py --start-batch %d",
+                self._last_batch_idx,
+            )
+            save_checkpoint(
+                self.checkpoint_file, self._last_batch_idx,
+                total_batches, self.stats, self.run_id,
+            )
 
         self._print_final_summary(total_batches)
 
@@ -355,8 +365,8 @@ class IntegratedPipeline:
 
     def _run_batches(self, start_batch, total_batches, total_files, files, api_key):
         """Execute all batches from start_batch to end."""
-        batch_idx = start_batch
         for batch_idx in range(start_batch, total_batches):
+            self._last_batch_idx = batch_idx
             if self._should_skip_batch(batch_idx):
                 log.info("  [%04d] SKIP (already done)", batch_idx)
                 continue
