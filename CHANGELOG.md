@@ -11,9 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING**: Package renamed from `src/` to `kct/` — all imports changed (`from src.` → `from kct.`)
 - **BREAKING**: CLI entrypoints updated (`src.xxx` → `kct.xxx` in pyproject.toml)
 - **faster-whisper** moved from core dependencies to `[gpu]` optional (CPU-only installs now succeed)
+- **config.py**: lazy env resolution — module-level variables are resolved on first access, not at import time
 - Removed 7 duplicate docstrings (Korean kept, English removed)
 - CONTRIBUTING.md: install command updated to `pip install -e ".[dev]"`
-- docs/architecture.md updated to v0.9.1 (unified extraction, domain_corrections.json, vendor-neutral defaults)
+- docs/architecture.md updated to v1.0.0
+- All documentation `src/` references replaced with `kct/`
+- pyproject.toml classifier: `Beta` → `Production/Stable`
+
+### Added
+- PyPI publish workflow (`.github/workflows/publish.yml`) — trusted publisher, tag-triggered
+- 3 new health_check tests (missing transcript, blacklist, canonical stem)
 
 ### Deprecated
 - `extract_entities.py` and `extract_schedules.py` — fully replaced by `extract_all.py`

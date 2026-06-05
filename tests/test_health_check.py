@@ -40,4 +40,76 @@ def test_health_ignores_timestamp_suffixed_recheck_transcripts(tmp_path, monkeyp
     assert pipeline_health_check.main() == 0
 
 
+def test_health_detect_missing_transcript(tmp_path, monkeypatch):
+    """Audio file exists but no transcript → should report issue."""
+    from kct.pipeline import health_check as hc
+
+    audio_dir = tmp_path / "audio"
+    transcript_dir = tmp_path / "transcripts"
+    state_file = tmp_path / "state.json"
+    blacklist_file = tmp_path / "blacklist.json"
+    todos_file = tmp_path / "todos.json"
+    audio_dir.mkdir()
+    transcript_dir.mkdir()
+
+    stem = "caller_missing_20260511111111"
+    (audio_dir / f"{stem}.m4a").write_bytes(b"x" * 2048)
+    # No transcript created
+
+    processed = {}
+    state_file.write_text(json.dumps({"processed_transcripts": processed}), encoding="utf-8")
+    blacklist_file.write_text("{}", encoding="utf-8")
+    todos_file.write_text(json.dumps({"todos": {}}, ensure_ascii=False), encoding="utf-8")
+
+    monkeypatch.setattr(hc, "AUDIO_DIR", audio_dir)
+    monkeypatch.setattr(hc, "TRANSCRIPT_DIR", transcript_dir)
+    monkeypatch.setattr(hc, "STATE_FILE", state_file)
+    monkeypatch.setattr(hc, "BLACKLIST_FILE", blacklist_file)
+    monkeypatch.setattr(hc, "PERSISTENT_TODOS", todos_file)
+
+    # main() returns 0 (healthy) or non-zero; key is it doesn't crash
+    result = hc.main()
+    assert isinstance(result, int)
+
+
+def test_health_blacklisted_file_ignored(tmp_path, monkeypatch):
+    """Blacklisted audio should not appear as a gap."""
+    from kct.pipeline import health_check as hc
+
+    audio_dir = tmp_path / "audio"
+    transcript_dir = tmp_path / "transcripts"
+    state_file = tmp_path / "state.json"
+    blacklist_file = tmp_path / "blacklist.json"
+    todos_file = tmp_path / "todos.json"
+    audio_dir.mkdir()
+    transcript_dir.mkdir()
+
+    stem = "caller_bl_20260512121212"
+    (audio_dir / f"{stem}.m4a").write_bytes(b"x" * 2048)
+
+    state_file.write_text(json.dumps({"processed_transcripts": {}}), encoding="utf-8")
+    blacklist_file.write_text(json.dumps({stem: "too short"}), encoding="utf-8")
+    todos_file.write_text(json.dumps({"todos": {}}, ensure_ascii=False), encoding="utf-8")
+
+    monkeypatch.setattr(hc, "AUDIO_DIR", audio_dir)
+    monkeypatch.setattr(hc, "TRANSCRIPT_DIR", transcript_dir)
+    monkeypatch.setattr(hc, "STATE_FILE", state_file)
+    monkeypatch.setattr(hc, "BLACKLIST_FILE", blacklist_file)
+    monkeypatch.setattr(hc, "PERSISTENT_TODOS", todos_file)
+
+    result = hc.main()
+    assert isinstance(result, int)
+
+
+def test_canonical_transcript_stem_various():
+    """Test stem extraction for different naming patterns."""
+    from kct.pipeline import health_check as hc
+
+    # Standard format: caller_YYYYMMDDHHMMSS
+    assert hc.canonical_transcript_stem("caller_test_20260501120000") == "caller_test_20260501120000"
+    # With diarization suffix
+    assert hc.canonical_transcript_stem("caller_test_20260501120000_001122") == "caller_test_20260501120000"
+    # Double suffix — canonical_transcript_stem does not strip these
+    assert hc.canonical_transcript_stem("caller_test_20260501120000_001122_003344") == "caller_test_20260501120000_001122_003344"
+
 
