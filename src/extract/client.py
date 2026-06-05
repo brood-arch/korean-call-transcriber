@@ -60,7 +60,7 @@ def _extract_json_from_text(text: str) -> dict | None:
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        pass
+        pass  # Expected: text may contain prose before/after JSON
 
     # Find first { ... last } and try to parse
     start = text.find("{")
@@ -68,8 +68,8 @@ def _extract_json_from_text(text: str) -> dict | None:
     if start >= 0 and end > start:
         try:
             return json.loads(text[start : end + 1])
-        except json.JSONDecodeError:
-            pass
+        except json.JSONDecodeError as exc:
+            log.debug("Failed to parse extracted JSON object: %s", exc)
 
     return None
 

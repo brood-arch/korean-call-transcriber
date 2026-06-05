@@ -38,7 +38,7 @@ def test_pyproject_exposes_console_scripts():
     scripts = data["project"]["scripts"]
     version = data["project"]["version"]
     assert version, "version must be set in pyproject.toml"
-    assert tuple(int(x) for x in version.split(".")) >= (0, 4, 0), f"version {version} < 0.4.0"
+    assert tuple(int(x) for x in version.split(".")) >= (0, 8, 0), f"version {version} < 0.8.0"
     assert scripts["kct-transcribe"] == "src.transcribe.batch_transcribe:main"
     assert scripts["kct-extract"] == "src.extract.extract_all:main"
     assert scripts["kct-health"] == "src.pipeline.health_check:main"

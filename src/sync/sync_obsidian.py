@@ -72,7 +72,8 @@ def read_source(filepath: Path) -> str:
     for enc in ("utf-8", "cp949", "euc-kr"):
         try:
             return filepath.read_text(encoding=enc)
-        except (UnicodeDecodeError, UnicodeError):
+        except (UnicodeDecodeError, UnicodeError) as exc:
+            log.debug("Failed to read source file with encoding: %s", exc)
             continue
     # 마지막 수단: 오류 무시
     return filepath.read_text(encoding="utf-8", errors="replace")

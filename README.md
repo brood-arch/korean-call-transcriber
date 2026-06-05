@@ -412,6 +412,14 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 
 ## Changelog
 
+### v0.8.2
+- Refactored `extract_entities.py` and `extract_schedules.py` to use centralized LLM client (`src.extract.client`)
+- Added logging to all silent `except` blocks across codebase
+- Added `ffmpeg-python` to core dependencies in pyproject.toml
+- Added `chromadb` and `obsidian` optional dependency groups
+- Created `docs/` with security model, known limitations, and troubleshooting guides
+- Cleaned up `requirements.txt` to match pyproject.toml
+
 ### v0.3.4
 - Centralized LLM configuration and reused the common LLM client across extraction modules
 - Added sensitive-output redaction before retry/minions logs store stdout and stderr tails

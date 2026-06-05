@@ -5,7 +5,7 @@
 - Reduce `--batch-size` (default: 8)
 - Use smaller Whisper model: `--model base`
 
-## "Module not found: src.pipeline.utils"
+## "Module not found: src.pipeline_utils"
 - Ensure you run from repo root
 - Install: `pip install -e ".[dev]"`
 
@@ -20,3 +20,7 @@
 ## "Windows path issues"
 - Use forward slashes or raw strings
 - Set `KCT_AUDIO_DIR` explicitly
+
+## "Shell jobs disabled"
+- Set `KCT_ENABLE_SHELL_JOBS=1` for trusted local automation
+- See `docs/security-model.md` for details

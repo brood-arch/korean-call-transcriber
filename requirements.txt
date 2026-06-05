@@ -1,32 +1,28 @@
 # Korean Call Transcriber - Python dependencies
+# These match pyproject.toml [project.dependencies] + [project.optional-dependencies]
 
-# Core transcription
+# Core (pyproject.toml [project.dependencies])
 faster-whisper>=1.0.0
+ffmpeg-python>=0.2.0
+numpy>=1.24.0
+psutil>=5.9.0
+
+# GPU (pyproject.toml [project.optional-dependencies] gpu)
 whisperx>=3.1.0
 torch>=2.0.0
-numpy>=1.24.0
-
-# GPU/System monitoring
-psutil>=5.9.0
 nvidia-ml-py3>=7.352.0
 
 # LLM API (no external SDK needed — uses urllib)
-# If you use OpenAI SDK:
-# openai>=1.0.0
 
-# Vector DB (optional, for RAG schedule extraction)
+# Vector DB (pyproject.toml [project.optional-dependencies] chromadb)
 chromadb>=0.4.0
+
+# Minions job queue (pyproject.toml [project.optional-dependencies] queue)
+psycopg2-binary>=2.9.0
+
+# Google Calendar (pyproject.toml [project.optional-dependencies] calendar)
+# google-auth>=2.0.0
+# google-auth-oauthlib>=1.0.0
 
 # Langfuse tracing (optional)
 # langfuse>=2.0.0
-
-# Audio processing
-ffmpeg-python>=0.2.0
-
-# Minions job queue (optional, Postgres backend)
-psycopg2-binary>=2.9.0
-
-# Email IMAP (standard library imaplib — no extra dependency needed)
-# Google Calendar (requires google-auth + google-auth-oauthlib)
-# google-auth>=2.0.0
-# google-auth-oauthlib>=1.0.0
