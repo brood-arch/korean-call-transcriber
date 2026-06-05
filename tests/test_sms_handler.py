@@ -1,11 +1,11 @@
-"""Tests for src.integrations.sms_handler — payload normalization, TODO conversion, edge cases."""
+"""Tests for kct.integrations.sms_handler — payload normalization, TODO conversion, edge cases."""
 
 
 
 # ── SMSMessage dataclass ────────────────────────────────────────────────
 
 def test_sms_message_fields():
-    from src.integrations.sms_handler import SMSMessage
+    from kct.integrations.sms_handler import SMSMessage
     sms = SMSMessage(
         sender="+82-10-1234-5678",
         message="Test message",
@@ -20,7 +20,7 @@ def test_sms_message_fields():
 # ── Payload normalization ────────────────────────────────────────────────
 
 def test_normalize_sms_payload_standard():
-    from src.integrations.sms_handler import normalize_sms_payload
+    from kct.integrations.sms_handler import normalize_sms_payload
     payload = {
         "from": "+82-10-1234-5678",
         "body": "Meeting confirmed",
@@ -36,7 +36,7 @@ def test_normalize_sms_payload_standard():
 
 def test_normalize_sms_payload_alternative_keys():
     """Test with 'sender', 'text', and 'message' alternatives."""
-    from src.integrations.sms_handler import normalize_sms_payload
+    from kct.integrations.sms_handler import normalize_sms_payload
     # 'sender' instead of 'from'
     sms = normalize_sms_payload({"sender": "+82-10-9999", "body": "hi"})
     assert sms.sender == "+82-10-9999"
@@ -51,7 +51,7 @@ def test_normalize_sms_payload_alternative_keys():
 
 
 def test_normalize_sms_payload_missing_fields():
-    from src.integrations.sms_handler import normalize_sms_payload
+    from kct.integrations.sms_handler import normalize_sms_payload
     sms = normalize_sms_payload({})
     assert sms.sender == ""
     assert sms.message == ""
@@ -59,7 +59,7 @@ def test_normalize_sms_payload_missing_fields():
 
 
 def test_normalize_sms_payload_preserves_raw():
-    from src.integrations.sms_handler import normalize_sms_payload
+    from kct.integrations.sms_handler import normalize_sms_payload
     payload = {"from": "A", "body": "B", "extra_key": "extra_value"}
     sms = normalize_sms_payload(payload)
     assert sms.raw_data["extra_key"] == "extra_value"
@@ -69,7 +69,7 @@ def test_normalize_sms_payload_preserves_raw():
 
 def test_extract_sms_todos_returns_empty():
     """Default implementation returns empty list."""
-    from src.integrations.sms_handler import SMSMessage, extract_sms_todos
+    from kct.integrations.sms_handler import SMSMessage, extract_sms_todos
     sms = SMSMessage(sender="A", message="test", timestamp="2026-01-01T00:00:00")
     todos = extract_sms_todos(sms)
     assert isinstance(todos, list)
@@ -79,7 +79,7 @@ def test_extract_sms_todos_returns_empty():
 # ── SMS to TODO entry conversion ────────────────────────────────────────
 
 def test_sms_to_todo_entry_enriches():
-    from src.integrations.sms_handler import SMSMessage, sms_to_todo_entry
+    from kct.integrations.sms_handler import SMSMessage, sms_to_todo_entry
     sms = SMSMessage(
         sender="+82-10-1234",
         message="test",
@@ -100,14 +100,14 @@ def test_sms_to_todo_entry_enriches():
 
 
 def test_sms_to_todo_entry_empty():
-    from src.integrations.sms_handler import SMSMessage, sms_to_todo_entry
+    from kct.integrations.sms_handler import SMSMessage, sms_to_todo_entry
     sms = SMSMessage(sender="A", message="test", timestamp="2026-01-01")
     entries = sms_to_todo_entry(sms, [])
     assert entries == []
 
 
 def test_sms_to_todo_entry_preserves_original_fields():
-    from src.integrations.sms_handler import SMSMessage, sms_to_todo_entry
+    from kct.integrations.sms_handler import SMSMessage, sms_to_todo_entry
     sms = SMSMessage(sender="B", message="test", timestamp="2026-01-01")
     todos = [{"title": "Task", "priority": "low", "custom_field": "value"}]
     entries = sms_to_todo_entry(sms, todos)
@@ -118,7 +118,7 @@ def test_sms_to_todo_entry_preserves_original_fields():
 # ── Edge cases ───────────────────────────────────────────────────────────
 
 def test_normalize_sms_payload_none_values():
-    from src.integrations.sms_handler import normalize_sms_payload
+    from kct.integrations.sms_handler import normalize_sms_payload
     sms = normalize_sms_payload({"from": None, "body": None})
     # Should not crash; .get() with None returns None which becomes ""
     assert isinstance(sms.sender, (str, type(None)))
@@ -126,6 +126,6 @@ def test_normalize_sms_payload_none_values():
 
 
 def test_sms_message_raw_data_default():
-    from src.integrations.sms_handler import SMSMessage
+    from kct.integrations.sms_handler import SMSMessage
     sms = SMSMessage(sender="A", message="B", timestamp="T")
     assert sms.raw_data == {}

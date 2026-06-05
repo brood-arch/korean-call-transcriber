@@ -83,7 +83,7 @@ def _report(tmp_path: Path):
 
 
 def test_build_queue_from_gap_report_maps_actionable_reasons_and_excludes_holds(tmp_path):
-    from src.queue import retry_queue as q
+    from kct.queue import retry_queue as q
 
     queue = q.build_queue_from_report(_report(tmp_path), now="2026-05-12T10:00:00+09:00")
 
@@ -98,7 +98,7 @@ def test_build_queue_from_gap_report_maps_actionable_reasons_and_excludes_holds(
 
 
 def test_jsonl_round_trip_and_atomic_rewrite_preserves_entries_on_failure(tmp_path, monkeypatch):
-    from src.queue import retry_queue as q
+    from kct.queue import retry_queue as q
 
     path = tmp_path / "transcription_retry_queue.jsonl"
     entries = q.build_queue_from_report(_report(tmp_path), now="2026-05-12T10:00:00+09:00")[:2]
@@ -117,7 +117,7 @@ def test_jsonl_round_trip_and_atomic_rewrite_preserves_entries_on_failure(tmp_pa
 
 
 def test_dry_run_worker_reports_commands_without_mutating_queue_or_backing_up(tmp_path):
-    from src.queue import retry_queue as q
+    from kct.queue import retry_queue as q
 
     queue_path = tmp_path / "transcription_retry_queue.jsonl"
     entries = q.build_queue_from_report(_report(tmp_path), now="2026-05-12T10:00:00+09:00")
@@ -133,29 +133,29 @@ def test_dry_run_worker_reports_commands_without_mutating_queue_or_backing_up(tm
     assert result["dry_run"] is True
     assert result["selected"] == 3
     argv_text = " ".join(result["commands"][0]["argv"])
-    assert "src.transcribe.batch_transcribe" in argv_text
+    assert "kct.transcribe.batch_transcribe" in argv_text
     assert "--file" in argv_text
     assert queue_path.read_text(encoding="utf-8") == before
     assert not list((tmp_path / "backup").glob("**/*transcription_retry_queue*"))
 
 
 def test_command_for_entry_supports_native_and_wsl_shapes(tmp_path):
-    from src.queue import retry_queue as q
+    from kct.queue import retry_queue as q
 
     entry = q.build_queue_from_report(_report(tmp_path), now="2026-05-12T10:00:00+09:00")[0]
 
     native = q.command_for_entry(entry, tmp_path, running_on_wsl=False)
-    assert native[1:4] == ["-m", "src.transcribe.batch_transcribe", "--file"]
+    assert native[1:4] == ["-m", "kct.transcribe.batch_transcribe", "--file"]
 
     wsl = q.command_for_entry(entry, tmp_path, running_on_wsl=True)
     wsl_text = " ".join(wsl)
     assert wsl[:2] == ["/mnt/c/Windows/System32/cmd.exe", "/c"]
-    assert "src.transcribe.batch_transcribe" in wsl_text
+    assert "kct.transcribe.batch_transcribe" in wsl_text
     assert "--file" in wsl_text
 
 
 def test_success_history_redacts_sensitive_output():
-    from src.queue import retry_queue as q
+    from kct.queue import retry_queue as q
 
     entry = {"history": []}
     q.mark_success(
@@ -175,7 +175,7 @@ def test_success_history_redacts_sensitive_output():
 
 
 def test_worker_records_failure_attempt_backoff_log_and_backup(tmp_path):
-    from src.queue import retry_queue as q
+    from kct.queue import retry_queue as q
 
     queue_path = tmp_path / "transcription_retry_queue.jsonl"
     entries = q.build_queue_from_report(_report(tmp_path), now="2026-05-12T10:00:00+09:00")[:1]
@@ -208,7 +208,7 @@ def test_worker_records_failure_attempt_backoff_log_and_backup(tmp_path):
 
 
 def test_worker_marks_terminal_failure_after_max_attempts(tmp_path):
-    from src.queue import retry_queue as q
+    from kct.queue import retry_queue as q
 
     queue_path = tmp_path / "transcription_retry_queue.jsonl"
     entry = q.build_queue_from_report(_report(tmp_path), now="2026-05-12T10:00:00+09:00")[0]

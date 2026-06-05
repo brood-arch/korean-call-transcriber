@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2025-06-05
+
+### Changed
+- **BREAKING**: Package renamed from `src/` to `kct/` — all imports changed (`from src.` → `from kct.`)
+- **BREAKING**: CLI entrypoints updated (`src.xxx` → `kct.xxx` in pyproject.toml)
+- **faster-whisper** moved from core dependencies to `[gpu]` optional (CPU-only installs now succeed)
+- Removed 7 duplicate docstrings (Korean kept, English removed)
+- CONTRIBUTING.md: install command updated to `pip install -e ".[dev]"`
+- docs/architecture.md updated to v0.9.1 (unified extraction, domain_corrections.json, vendor-neutral defaults)
+
+### Deprecated
+- `extract_entities.py` and `extract_schedules.py` — fully replaced by `extract_all.py`
+
 ## [0.9.1] - 2025-06-05
 
 ### Changed

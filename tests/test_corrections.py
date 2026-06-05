@@ -1,4 +1,4 @@
-"""Tests for src.correct.corrections — rule loading, hot-reload, application."""
+"""Tests for kct.correct.corrections — rule loading, hot-reload, application."""
 
 import json
 from pathlib import Path
@@ -23,16 +23,16 @@ def _rules_data():
 
 class TestRuleLoading:
     def test_creates_default_rules_if_missing(self, tmp_path, monkeypatch):
-        from src.correct.corrections import ensure_rules_file
+        from kct.correct.corrections import ensure_rules_file
 
         rules_path = tmp_path / "rules.json"
-        monkeypatch.setattr("src.correct.corrections.RULES_PATH", rules_path)
+        monkeypatch.setattr("kct.correct.corrections.RULES_PATH", rules_path)
         result = ensure_rules_file()
         assert rules_path.exists()
         assert "exact_replacements" in result
 
     def test_loads_existing_rules(self, tmp_path, monkeypatch):
-        from src.correct import corrections
+        from kct.correct import corrections
 
         rules_path = tmp_path / "rules.json"
         _write_json(rules_path, _rules_data())
@@ -47,7 +47,7 @@ class TestRuleLoading:
 
 class TestCorrectionApplication:
     def test_exact_replacement(self, tmp_path, monkeypatch):
-        from src.correct import corrections
+        from kct.correct import corrections
 
         rules_path = tmp_path / "rules.json"
         _write_json(rules_path, _rules_data())
@@ -61,7 +61,7 @@ class TestCorrectionApplication:
         assert "점표" not in result
 
     def test_alias_replacement(self, tmp_path, monkeypatch):
-        from src.correct import corrections
+        from kct.correct import corrections
 
         rules_path = tmp_path / "rules.json"
         _write_json(rules_path, _rules_data())
@@ -78,7 +78,7 @@ class TestCorrectionApplication:
         assert isinstance(changes, list)
 
     def test_no_rules_returns_original(self, tmp_path, monkeypatch):
-        from src.correct import corrections
+        from kct.correct import corrections
 
         rules_path = tmp_path / "rules.json"
         _write_json(rules_path, {"exact_replacements": [], "aliases": []})
@@ -94,7 +94,7 @@ class TestCorrectionApplication:
 
 class TestHotReload:
     def test_detects_file_change(self, tmp_path, monkeypatch):
-        from src.correct import corrections
+        from kct.correct import corrections
 
         rules_path = tmp_path / "rules.json"
         _write_json(rules_path, {"exact_replacements": [], "aliases": []})

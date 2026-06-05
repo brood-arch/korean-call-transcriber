@@ -1,6 +1,6 @@
-"""Tests for src.pipeline.redact — sensitive text redaction."""
+"""Tests for kct.pipeline.redact — sensitive text redaction."""
 
-from src.pipeline.redact import redact_sensitive_text
+from kct.pipeline.redact import redact_sensitive_text
 
 
 class TestPhoneRedaction:

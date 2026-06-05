@@ -1,6 +1,6 @@
 import json
 
-from src.correct.korean_english_correction import correct, load_corrections, quick_fix
+from kct.correct.korean_english_correction import correct, load_corrections, quick_fix
 
 
 def test_quick_fix_replaces_term_at_start():

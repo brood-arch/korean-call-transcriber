@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "korean-call-transcriber"
-version = "0.9.1"
+version = "1.0.0"
 description = "Korean phone call transcription pipeline with Whisper + speaker diarization, auto TODO/schedule/entity extraction"
 readme = "README.md"
 license = {text = "MIT"}
@@ -25,21 +25,21 @@ classifiers = [
 ]
 
 dependencies = [
-    "faster-whisper>=1.0.0",
     "ffmpeg-python>=0.2.0",
     "numpy>=1.24.0",
     "psutil>=5.9.0",
 ]
 
 [project.scripts]
-kct-transcribe = "src.transcribe.batch_transcribe:main"
-kct-extract = "src.extract.extract_all:main"
-kct-health = "src.pipeline.health_check:main"
-kct-gap = "src.queue.gap_analyzer:main"
-kct-sync-obsidian = "src.sync.sync_obsidian:main"
+kct-transcribe = "kct.transcribe.batch_transcribe:main"
+kct-extract = "kct.extract.extract_all:main"
+kct-health = "kct.pipeline.health_check:main"
+kct-gap = "kct.queue.gap_analyzer:main"
+kct-sync-obsidian = "kct.sync.sync_obsidian:main"
 
 [project.optional-dependencies]
 gpu = [
+    "faster-whisper>=1.0.0",
     "nvidia-ml-py3>=7.352.0",
     "torch>=2.0.0",
     "whisperx>=3.1.0",
@@ -66,7 +66,7 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["src*"]
+include = ["kct*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -81,5 +81,5 @@ select = ["E", "F", "W", "I"]
 ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
-"src/correct/corrections.py" = ["E402"]
-"src/pipeline/minions_queue.py" = ["E402"]
+"kct/correct/corrections.py" = ["E402"]
+"kct/pipeline/minions_queue.py" = ["E402"]

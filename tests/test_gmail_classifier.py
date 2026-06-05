@@ -1,4 +1,4 @@
-"""Tests for src.integrations.gmail_classifier — classification, keyword matching, MIME decoding."""
+"""Tests for kct.integrations.gmail_classifier — classification, keyword matching, MIME decoding."""
 
 from unittest.mock import MagicMock
 
@@ -7,7 +7,7 @@ import pytest
 # ── Classification logic (no IMAP) ──────────────────────────────────────
 
 def test_classify_ad_multiple_keywords():
-    from src.integrations.gmail_classifier import classify_email
+    from kct.integrations.gmail_classifier import classify_email
     result = classify_email(
         subject="광고 특가 할인 이벤트",
         sender="promo@spam.com",
@@ -17,7 +17,7 @@ def test_classify_ad_multiple_keywords():
 
 
 def test_classify_ad_newsletter():
-    from src.integrations.gmail_classifier import classify_email
+    from kct.integrations.gmail_classifier import classify_email
     result = classify_email(
         subject="뉴스레터 구독 안내",
         sender="newsletter@company.com",
@@ -27,7 +27,7 @@ def test_classify_ad_newsletter():
 
 
 def test_classify_important():
-    from src.integrations.gmail_classifier import classify_email
+    from kct.integrations.gmail_classifier import classify_email
     result = classify_email(
         subject="긴급: 견적서 확인 요청",
         sender="partner@biz.com",
@@ -37,7 +37,7 @@ def test_classify_important():
 
 
 def test_classify_important_order():
-    from src.integrations.gmail_classifier import classify_email
+    from kct.integrations.gmail_classifier import classify_email
     result = classify_email(
         subject="주문 확인",
         sender="orders@biz.com",
@@ -47,7 +47,7 @@ def test_classify_important_order():
 
 
 def test_classify_normal():
-    from src.integrations.gmail_classifier import classify_email
+    from kct.integrations.gmail_classifier import classify_email
     result = classify_email(
         subject="안녕하세요",
         sender="friend@example.com",
@@ -58,7 +58,7 @@ def test_classify_normal():
 
 def test_classify_ad_only_one_keyword_is_normal():
     """Ad classification requires >= 2 ad keywords."""
-    from src.integrations.gmail_classifier import classify_email
+    from kct.integrations.gmail_classifier import classify_email
     result = classify_email(
         subject="할인",
         sender="shop@example.com",
@@ -70,7 +70,7 @@ def test_classify_ad_only_one_keyword_is_normal():
 
 def _count_ad_keywords(subject, sender, body):
     """Helper to count ad keywords."""
-    from src.integrations.gmail_classifier import AD_KEYWORDS
+    from kct.integrations.gmail_classifier import AD_KEYWORDS
     text = f"{subject} {sender} {body}".lower()
     return sum(1 for kw in AD_KEYWORDS if kw.lower() in text)
 
@@ -78,13 +78,13 @@ def _count_ad_keywords(subject, sender, body):
 # ── Keyword matching ─────────────────────────────────────────────────────
 
 def test_ad_keywords_list():
-    from src.integrations.gmail_classifier import AD_KEYWORDS
+    from kct.integrations.gmail_classifier import AD_KEYWORDS
     assert len(AD_KEYWORDS) > 0
     assert "광고" in AD_KEYWORDS
 
 
 def test_important_keywords_list():
-    from src.integrations.gmail_classifier import IMPORTANT_KEYWORDS
+    from kct.integrations.gmail_classifier import IMPORTANT_KEYWORDS
     assert len(IMPORTANT_KEYWORDS) > 0
     assert "긴급" in IMPORTANT_KEYWORDS
 
@@ -92,24 +92,24 @@ def test_important_keywords_list():
 # ── MIME header decoding ────────────────────────────────────────────────
 
 def test_decode_mime_words_ascii():
-    from src.integrations.gmail_classifier import decode_mime_words
+    from kct.integrations.gmail_classifier import decode_mime_words
     assert decode_mime_words("Hello") == "Hello"
 
 
 def test_decode_mime_words_korean_encoded():
-    from src.integrations.gmail_classifier import decode_mime_words
+    from kct.integrations.gmail_classifier import decode_mime_words
     # =?utf-8?B?7YWM7Iqk7Yq4?= decodes to "테스트"
     result = decode_mime_words("=?utf-8?B?7YWM7Iqk7Yq4?=")
     assert result == "테스트"
 
 
 def test_decode_mime_words_none():
-    from src.integrations.gmail_classifier import decode_mime_words
+    from kct.integrations.gmail_classifier import decode_mime_words
     assert decode_mime_words(None) == ""
 
 
 def test_decode_mime_words_mixed():
-    from src.integrations.gmail_classifier import decode_mime_words
+    from kct.integrations.gmail_classifier import decode_mime_words
     result = decode_mime_words("Re: =?utf-8?B?7YWM7Iqk7Yq4?=")
     assert "테스트" in result
 
@@ -119,7 +119,7 @@ def test_decode_mime_words_mixed():
 def test_get_email_body_plain():
     import email as email_lib
 
-    from src.integrations.gmail_classifier import get_email_body
+    from kct.integrations.gmail_classifier import get_email_body
     msg = email_lib.message_from_string(
         "Content-Type: text/plain; charset=utf-8\r\n\r\nHello body"
     )
@@ -130,7 +130,7 @@ def test_get_email_body_plain():
 def test_get_email_body_multipart():
     import email as email_lib
 
-    from src.integrations.gmail_classifier import get_email_body
+    from kct.integrations.gmail_classifier import get_email_body
     raw = (
         "From: test@test.com\r\n"
         "Subject: Test\r\n"
@@ -155,7 +155,7 @@ def test_get_email_body_multipart():
 # ── Credentials ──────────────────────────────────────────────────────────
 
 def test_get_credentials_missing(monkeypatch):
-    from src.integrations.gmail_classifier import _get_credentials
+    from kct.integrations.gmail_classifier import _get_credentials
     monkeypatch.delenv("GMAIL_ADDRESS", raising=False)
     monkeypatch.delenv("GMAIL_APP_PASSWORD", raising=False)
     with pytest.raises(EnvironmentError):
@@ -163,7 +163,7 @@ def test_get_credentials_missing(monkeypatch):
 
 
 def test_get_credentials_present(monkeypatch):
-    from src.integrations.gmail_classifier import _get_credentials
+    from kct.integrations.gmail_classifier import _get_credentials
     monkeypatch.setenv("GMAIL_ADDRESS", "test@gmail.com")
     monkeypatch.setenv("GMAIL_APP_PASSWORD", "abcd1234efgh5678")
     addr, pw = _get_credentials()
@@ -177,7 +177,7 @@ def test_scan_inbox_mocked(monkeypatch):
     """Verify scan_inbox classifies emails using mocked IMAP."""
     from email.message import EmailMessage
 
-    from src.integrations.gmail_classifier import scan_inbox
+    from kct.integrations.gmail_classifier import scan_inbox
 
     def make_message(subject, sender, body):
         msg = EmailMessage()
@@ -205,7 +205,7 @@ def test_scan_inbox_mocked(monkeypatch):
         ("OK", [(b"2", imp_email.as_bytes())]),
     ]
     mock_imap_cls = MagicMock(return_value=mock_mail)
-    monkeypatch.setattr("src.integrations.gmail_classifier.imaplib.IMAP4_SSL", mock_imap_cls)
+    monkeypatch.setattr("kct.integrations.gmail_classifier.imaplib.IMAP4_SSL", mock_imap_cls)
     monkeypatch.setenv("GMAIL_ADDRESS", "test@gmail.com")
     monkeypatch.setenv("GMAIL_APP_PASSWORD", "pass")
 

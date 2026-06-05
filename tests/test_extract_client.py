@@ -4,7 +4,7 @@ from unittest.mock import Mock
 
 
 def test_get_llm_config_prefers_generic_env(monkeypatch):
-    from src.extract.client import get_llm_config
+    from kct.extract.client import get_llm_config
 
     monkeypatch.setenv("LLM_API_KEY", "generic-key")
     monkeypatch.setenv("LLM_BASE_URL", "https://llm.example/v1")
@@ -21,7 +21,7 @@ def test_get_llm_config_prefers_generic_env(monkeypatch):
 
 
 def test_call_extract_payload_uses_generic_model_without_glm_thinking(monkeypatch):
-    from src.extract import client
+    from kct.extract import client
 
     captured = {}
 
@@ -53,7 +53,7 @@ def test_call_extract_payload_uses_generic_model_without_glm_thinking(monkeypatc
 
 
 def test_call_llm_json_retries_after_rate_limit(monkeypatch):
-    from src.extract import client
+    from kct.extract import client
 
     calls = {"count": 0}
     sleeps = []
@@ -86,7 +86,7 @@ def test_call_llm_json_retries_after_rate_limit(monkeypatch):
 
 
 def test_call_llm_json_returns_none_after_json_errors(monkeypatch):
-    from src.extract import client
+    from kct.extract import client
 
     class FakeResponse:
         def __enter__(self):
@@ -108,7 +108,7 @@ def test_call_llm_json_returns_none_after_json_errors(monkeypatch):
 
 
 def test_call_llm_json_glm_disables_thinking(monkeypatch):
-    from src.extract import client
+    from kct.extract import client
 
     captured = {}
 

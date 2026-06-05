@@ -1,4 +1,4 @@
-from src.extract.parser import parse_unified_response
+from kct.extract.parser import parse_unified_response
 
 
 def test_parse_valid_unified_json():
