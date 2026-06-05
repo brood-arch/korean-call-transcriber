@@ -359,6 +359,7 @@ def run_worker(
     runner: Callable[..., Any] = subprocess.run,
     timeout_seconds: int = 60 * 60 * 8,
 ) -> dict[str, Any]:
+    """재시도 큐에서 만료된 항목을 실행한다."""
     ts = coerce_now(now)
     entries = load_queue(queue_path)
     due = [e for e in entries if entry_due(e, now=ts)]

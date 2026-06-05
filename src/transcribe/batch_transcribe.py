@@ -102,6 +102,7 @@ logging.basicConfig(
 
 
 def parse_args():
+    """CLI 인수를 파싱한다."""
     p = argparse.ArgumentParser(description="Batch transcription with WhisperX")
     p.add_argument("--limit", type=int, default=0, help="Max files to process")
     p.add_argument("--file", help="Transcribe exactly one audio file")
@@ -229,6 +230,7 @@ def blacklist_add(stem: str, error_msg: str, count: bool = True) -> int:
 
 
 def is_blacklisted(stem: str) -> bool:
+    """해당 stem이 블랙리스트에 있는지 확인한다."""
     data = _load_blacklist()
     return stem in data and data[stem].get("blacklisted_at") is not None
 

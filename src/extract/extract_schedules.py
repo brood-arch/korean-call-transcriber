@@ -187,6 +187,7 @@ def parse_transcript_name(stem: str) -> dict:
 
 
 def deduplicate(items: list, key_fn) -> list:
+    """key_fn 기준으로 중복 항목을 제거한다."""
     seen = set()
     unique = []
     for item in items:

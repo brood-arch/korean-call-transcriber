@@ -58,6 +58,7 @@ def _get_fast_score():
             _fast_score_fn = fast_score_transcript
         except ImportError:
             def default_fast_score(text):
+                """fast_score 미가용 시 항상 처리하는 기본 채점 함수."""
                 return {
                     "score": 1.0, "band": "definite_keep",
                     "should_process": True, "signals": {}, "drop_reason": None,
