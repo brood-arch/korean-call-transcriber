@@ -1,3 +1,6 @@
+# DEPRECATED: use pip install -e ".[dev]" instead
+# All dependencies below are already declared in pyproject.toml ([dependencies] + [dev]).
+
 # Lightweight CI dependencies — no GPU/PyTorch/heavy packages
 # Used by GitHub Actions for lint + test
 

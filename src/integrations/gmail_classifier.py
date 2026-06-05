@@ -127,13 +127,13 @@ def get_email_body(msg) -> str:
                 try:
                     payload = part.get_payload(decode=True)
                     body = payload.decode("utf-8", errors="ignore")
-                except Exception as exc:
+                except (UnicodeDecodeError, OSError, AttributeError) as exc:  # noqa: BLE001
                     log.debug("Failed to decode multipart text/plain body: %s", exc)
     else:
         try:
             payload = msg.get_payload(decode=True)
             body = payload.decode("utf-8", errors="ignore")
-        except Exception as exc:
+        except (UnicodeDecodeError, OSError, AttributeError) as exc:  # noqa: BLE001
             log.debug("Failed to decode singlepart email body: %s", exc)
     return body
 
@@ -188,7 +188,7 @@ def move_to_trash(mail: imaplib.IMAP4_SSL, email_ids: list) -> None:
         try:
             mail.copy(email_id, "[Gmail]/Bin")
             mail.store(email_id, "+FLAGS", "\\Deleted")
-        except Exception as e:
+        except (imaplib.IMAP4.error, OSError) as e:  # noqa: BLE001
             log.error(f"Error moving email {email_id}: {e}")
     mail.expunge()
 

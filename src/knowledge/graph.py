@@ -74,7 +74,7 @@ class KnowledgeGraph:
                 data = json.loads(self.graph_path.read_text(encoding="utf-8"))
                 self.nodes = data.get("nodes", {})
                 self.edges = data.get("edges", [])
-            except Exception as exc:
+            except (json.JSONDecodeError, OSError) as exc:  # noqa: BLE001
                 log.debug("Failed to load knowledge graph %s: %s", self.graph_path, exc)
 
     def save(self) -> None:

@@ -37,7 +37,7 @@ def safe_write_text(path: Path, content: str) -> None:
     tmp.write_text(content, encoding="utf-8", newline="\n")
     try:
         tmp.replace(path)
-    except Exception as exc:
+    except OSError as exc:  # noqa: BLE001
         log.debug("Atomic text write cleanup failed for %s: %s", path, exc)
         try:
             tmp.unlink(missing_ok=True)

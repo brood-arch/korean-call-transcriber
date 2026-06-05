@@ -81,6 +81,7 @@ class AnalyzerError(RuntimeError):
 
 
 def load_json(path: Path, default: Any) -> Any:
+    """JSON 파일을 로드하며 실패 시 기본값을 반환."""
     if not path.exists():
         return default
     try:
@@ -91,12 +92,13 @@ def load_json(path: Path, default: Any) -> Any:
 
 
 def canonical_transcript_stem(stem: str) -> str:
-    """Return source audio stem for timestamp-suffixed transcript variants."""
+    """타임스탬프 접미사가 있는 전사 파일명에서 원본 오디오 stem을 반환."""
     m = re.match(r"^(.+_\d{14})_\d{6}$", stem)
     return m.group(1) if m else stem
 
 
 def iso_mtime(path: Path) -> str:
+    """파일 수정 시간을 ISO-8601 문자열로 반환."""
     return datetime.fromtimestamp(path.stat().st_mtime, tz=KST).isoformat()
 
 
@@ -104,6 +106,7 @@ def file_record(
     path: Path, reason: str, *,
     stem: str | None = None, extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """단일 파일의 분류 레코드를 생성."""
     data: dict[str, Any] = {
         "file": path.name,
         "stem": stem or path.stem,
@@ -119,6 +122,7 @@ def file_record(
 
 
 def load_blacklist(path: Path) -> tuple[dict[str, dict[str, Any]], set[str], set[str]]:
+    """블랙리스트 파일을 로드해 엔트리, 블랙리스트, 실패 집합을 반환."""
     raw = load_json(path, {})
     entries = {k: v for k, v in raw.items() if k != "_meta" and isinstance(v, dict)}
     blacklisted = {k for k, v in entries.items() if v.get("blacklisted_at")}
@@ -131,18 +135,21 @@ def load_blacklist(path: Path) -> tuple[dict[str, dict[str, Any]], set[str], set
 
 
 def load_chroma_basenames(path: Path) -> set[str]:
+    """ChromaDB 인덱스 상태 파일에서 basename 집합을 로드."""
     raw = load_json(path, {})
     files = raw.get("files", {}) if isinstance(raw, dict) else {}
     return {Path(str(k).replace("\\", "/")).name for k in files}
 
 
 def load_obsidian_processed(path: Path) -> set[str]:
+    """Obsidian 동기화 상태에서 처리 완료된 파일명 집합을 로드."""
     raw = load_json(path, {})
     processed = raw.get("processed", {}) if isinstance(raw, dict) else {}
     return {str(k) for k in processed}
 
 
 def load_integrated_processed(path: Path) -> set[str]:
+    """통합 추출 배치 파일들에서 처리된 stem 집합을 로드."""
     processed: set[str] = set()
     if not path.exists():
         return processed
@@ -154,6 +161,7 @@ def load_integrated_processed(path: Path) -> set[str]:
 
 
 def load_diarization_failed(log_path: Path) -> set[str]:
+    """전사 로그에서 화자 분리 실패 stem 집합을 추출."""
     if not log_path.exists():
         return set()
     failed: set[str] = set()
@@ -260,6 +268,7 @@ def analyze(
     integrated_extraction_dir: Path,
     transcribe_log: Path,
 ) -> dict[str, Any]:
+    """전사 파이프라인의 모든 갭을 원인별로 분류해 분석 리포트를 생성."""
     if not audio_dir.exists():
         raise AnalyzerError(f"audio_dir not found: {audio_dir}")
     if not transcript_dir.exists():
@@ -369,6 +378,7 @@ def analyze(
 
 
 def render_markdown(report: dict[str, Any], json_path: Path | None = None, max_action_rows: int = 30) -> str:
+    """분석 리포트를 마크다운 문자열로 렌더링."""
     counts = report["counts"]
     category_counts = report["category_counts"]
     lines = [
@@ -442,6 +452,7 @@ def render_markdown(report: dict[str, Any], json_path: Path | None = None, max_a
 
 
 def safe_write_text(path: Path, content: str) -> None:
+    """임시 파일에 쓴 후 원자적으로 이름 변경하여 텍스트 파일을 저장."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(content, encoding="utf-8", newline="\n")
@@ -449,6 +460,7 @@ def safe_write_text(path: Path, content: str) -> None:
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
+    """CLI 인자를 파싱."""
     parser = argparse.ArgumentParser(description="Analyze transcription pipeline gaps by cause taxonomy")
     parser.add_argument("--workspace", type=Path, default=WORKSPACE)
     parser.add_argument("--audio-dir", type=Path, default=DEFAULT_AUDIO_DIR)

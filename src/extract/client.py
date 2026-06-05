@@ -28,7 +28,7 @@ _NON_RETRYABLE = {400, 401, 403, 404}
 
 
 def get_llm_config(api_key: str = "") -> dict[str, str]:
-    """Backward-compatible dict wrapper for shared LLM config."""
+    """공유 LLM 설정을 딕셔너리로 반환하는 하위호환 래퍼."""
     config = _resolve_llm_config(api_key)
     return {
         "api_key": config.api_key,
@@ -113,7 +113,7 @@ def call_llm_json(
     timeout: int = 180,
     response_format: bool = True,
 ) -> tuple[dict | None, dict]:
-    """Call an OpenAI-compatible LLM and parse JSON content from the response."""
+    """OpenAI 호환 LLM을 호출하고 응답에서 JSON을 파싱한다."""
     config = _resolve_llm_config(api_key)
 
     # Early validation: refuse to make HTTP requests without an API key
@@ -156,7 +156,7 @@ def _attempt_llm_call(req, timeout, attempt):
         return _handle_url_error(e, attempt)
     except json.JSONDecodeError as e:
         return _simple_retry(f"json_decode: {e}", 5, attempt)
-    except Exception as e:
+    except (ConnectionError, TimeoutError, RuntimeError) as e:  # noqa: BLE001
         log.exception("Unexpected error in LLM call (attempt %d/%d)", attempt + 1, MAX_RETRIES)
         return _simple_retry(f"unexpected: {type(e).__name__}: {e}", 5, attempt)
 
@@ -176,7 +176,7 @@ def _handle_http_error_attempt(e, attempt):
     body = ""
     try:
         body = e.read().decode("utf-8", errors="replace")[:200]
-    except Exception as exc:
+    except (OSError, UnicodeDecodeError) as exc:  # noqa: BLE001
         log.debug("Failed to read LLM HTTP error body: %s", redact_sensitive_text(repr(exc)))
 
     if status == 429:
@@ -225,11 +225,9 @@ def _simple_retry(error_str, backoff, attempt):
 
 def call_llm_extract(api_key: str, content: str, run_id: str = "",
                      lf_available: bool = False) -> dict | None:
-    """Call an OpenAI-compatible LLM with unified extraction prompt.
-
-    Returns dict with keys: summary, todos, appointments, entities, products,
-    money, risks, corrections.  Returns None on failure.
-    """
+    """통합 추출 프롬프트로 LLM을 호출해 결과 딕셔너리를 반환한다."""
+    # Returns dict with keys: summary, todos, appointments, entities, products,
+    # money, risks, corrections.  Returns None on failure.
     from .parser import parse_unified_response
 
     prompt_template = get_prompt()
@@ -249,7 +247,7 @@ def call_llm_extract(api_key: str, content: str, run_id: str = "",
                 input=prompt[:300],
                 metadata={"run_id": run_id or ""},
             )
-        except Exception as exc:
+        except (ImportError, RuntimeError) as exc:
             log.debug("Langfuse generation setup failed: %s", redact_sensitive_text(repr(exc)))
 
     parsed_json, usage = call_llm_json(prompt, api_key=api_key, max_tokens=8192, timeout=180)
@@ -278,23 +276,24 @@ def call_llm_extract(api_key: str, content: str, run_id: str = "",
                         },
                     )
                     _gen.end()
-                except Exception as exc:
+                except (RuntimeError, ValueError) as exc:
                     log.debug("Langfuse generation update failed: %s", redact_sensitive_text(repr(exc)))
 
             return parsed
-        except Exception as e:
+        except (ValueError, KeyError, TypeError) as e:
             log.error("Parse error: %s: %s", type(e).__name__, redact_sensitive_text(str(e)))
 
     # Langfuse cleanup on failure
     if _gen:
         try:
             _gen.end()
-        except Exception as exc:
+        except RuntimeError as exc:
             log.debug("Langfuse generation cleanup failed: %s", redact_sensitive_text(repr(exc)))
 
     return None
 
 
-def call_zai_extract(*args, **kwargs):
+def call_zai_extract(*args, **kwargs) -> dict | None:
+    """call_llm_extract의 deprecated 별칭."""
     _w.warn("call_zai_extract is deprecated; use call_llm_extract", DeprecationWarning, stacklevel=2)
     return call_llm_extract(*args, **kwargs)

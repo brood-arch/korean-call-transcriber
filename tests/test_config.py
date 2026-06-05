@@ -167,7 +167,7 @@ class TestLLMConfigExplicitKey:
         import src.config as cfg
         importlib.reload(cfg)
         config = cfg.get_llm_config()
-        assert config.base_url == "https://api.z.ai/api/coding/paas/v4"
+        assert config.base_url == "https://api.openai.com/v1"
 
     def test_base_url_env_override(self, monkeypatch):
         monkeypatch.setenv("LLM_BASE_URL", "https://custom.api/v1/")

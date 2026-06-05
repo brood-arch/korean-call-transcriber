@@ -68,24 +68,29 @@ class QueueError(RuntimeError):
 
 
 def now_iso() -> str:
+    """현재 KST 시간을 ISO-8601 문자열로 반환."""
     return datetime.now(KST).isoformat(timespec="seconds")
 
 
 def parse_iso(value: str) -> datetime:
+    """ISO-8601 문자열을 datetime 객체로 파싱."""
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
 def coerce_now(value: str | None = None) -> str:
+    """값이 없으면 현재 시간을, 있으면 그대로 반환."""
     return value or now_iso()
 
 
 def append_jsonl(path: Path, row: dict[str, Any]) -> None:
+    """JSONL 파일에 행을 추가."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8", newline="\n") as f:
         f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
 
 
 def queue_id_for(stem: str, reason: str, next_action: str) -> str:
+    """stem/reason/action 조합으로 결정론적 큐 ID를 생성."""
     raw = f"{stem}\0{reason}\0{next_action}".encode("utf-8")
     return "rq_" + hashlib.sha256(raw).hexdigest()[:16]
 
@@ -104,6 +109,7 @@ def _path_from_row(row: dict[str, Any], report: dict[str, Any], *, kind: str) ->
 
 
 def build_entry(row: dict[str, Any], report: dict[str, Any], *, now: str) -> dict[str, Any] | None:
+    """간 리포트 행에서 재시도 큐 엔트리를 생성."""
     reason = str(row.get("reason") or "")
     next_action = ACTIONABLE_REASON_TO_ACTION.get(reason)
     if not next_action:
@@ -140,6 +146,7 @@ def build_entry(row: dict[str, Any], report: dict[str, Any], *, now: str) -> dic
 
 
 def build_queue_from_report(report: dict[str, Any], *, now: str | None = None) -> list[dict[str, Any]]:
+    """간 분석 리포트에서 재시도 큐 엔트리 목록을 생성."""
     ts = coerce_now(now)
     entries: dict[str, dict[str, Any]] = {}
     cause_files = report.get("cause_files") or {}
@@ -159,6 +166,7 @@ def build_queue_from_report(report: dict[str, Any], *, now: str | None = None) -
 
 
 def load_queue(path: Path) -> list[dict[str, Any]]:
+    """JSONL 큐 파일을 로드."""
     if not path.exists():
         return []
     entries = []
@@ -174,11 +182,13 @@ def load_queue(path: Path) -> list[dict[str, Any]]:
 
 
 def write_queue(path: Path, entries: Iterable[dict[str, Any]]) -> None:
+    """엔트리 목록을 JSONL 파일로 저장."""
     lines = [json.dumps(row, ensure_ascii=False, sort_keys=True) for row in entries]
     safe_write_text(path, "\n".join(lines) + ("\n" if lines else ""))
 
 
 def merge_queues(existing: list[dict[str, Any]], generated: list[dict[str, Any]], *, now: str) -> list[dict[str, Any]]:
+    """기존 큐와 새로 생성된 엔트리를 병합."""
     by_id = {str(e["queue_id"]): e for e in existing}
     for new in generated:
         old = by_id.get(str(new["queue_id"]))
@@ -210,6 +220,7 @@ def merge_queues(existing: list[dict[str, Any]], generated: list[dict[str, Any]]
 
 
 def backup_queue(queue_path: Path, workspace: Path, *, now: str) -> Path | None:
+    """큐 파일의 타임스탬프 백업을 생성."""
     if not queue_path.exists():
         return None
     stamp = now.replace(":", "").replace("-", "").replace("+", "_")
@@ -221,6 +232,7 @@ def backup_queue(queue_path: Path, workspace: Path, *, now: str) -> Path | None:
 
 
 def entry_due(entry: dict[str, Any], *, now: str) -> bool:
+    """엔트리가 지금 실행 가능한지 확인."""
     if entry.get("terminal_failure") or entry.get("status") in STATUS_TERMINAL:
         return False
     retry_at = entry.get("next_retry_at")
@@ -259,6 +271,7 @@ def _cmd_diarize(entry, win_py, win_source_path, running_on_wsl):
 
 
 def command_for_entry(entry: dict[str, Any], workspace: Path, running_on_wsl: bool | None = None) -> list[str]:
+    """엔트리의 next_action에 맞는 실행 명령어를 생성."""
     action = str(entry.get("next_action"))
     source_path = entry.get("source_path")
     win_py = os.environ.get("KCT_WINDOWS_PYTHON", sys.executable)
@@ -288,18 +301,21 @@ def command_for_entry(entry: dict[str, Any], workspace: Path, running_on_wsl: bo
 
 
 def backoff_next_retry(now: str, attempts: int) -> str:
+    """지수 백오프로 다음 재시도 시간을 계산."""
     base = parse_iso(now)
     minutes = min(60 * 24, 15 * (2 ** max(0, attempts - 1)))
     return (base + timedelta(minutes=minutes)).isoformat(timespec="seconds")
 
 
 def summarize_error(returncode: int, stderr: str, stdout: str) -> str:
+    """서브프로세스 에러 출력을 요약."""
     detail = redact_sensitive_text(stderr or stdout or "").strip().splitlines()
     tail = detail[-1] if detail else "no output"
     return f"exit {returncode}: {tail}"[:500]
 
 
 def mark_success(entry: dict[str, Any], *, now: str, argv: list[str], stdout: str = "", stderr: str = "") -> None:
+    """엔트리를 성공 상태로 표시."""
     entry["attempts"] = int(entry.get("attempts") or 0) + 1
     entry["status"] = "succeeded"
     entry["last_error"] = None
@@ -316,6 +332,7 @@ def mark_success(entry: dict[str, Any], *, now: str, argv: list[str], stdout: st
 
 
 def mark_failure(entry: dict[str, Any], *, now: str, argv: list[str], error: str) -> None:
+    """엔트리를 실패 상태로 표시하고 재시도 또는 종료 실패를 결정."""
     attempts = int(entry.get("attempts") or 0) + 1
     max_attempts = int(entry.get("max_attempts") or 3)
     entry["attempts"] = attempts
@@ -454,7 +471,7 @@ def run_worker(
                         "error": redact_sensitive_text(err, limit=500),
                     },
                 )
-        except Exception as exc:
+        except (OSError, subprocess.SubprocessError) as exc:  # noqa: BLE001
             mark_failure(entry, now=ts, argv=argv, error=redact_sensitive_text(repr(exc), limit=500))
             result["failed"] += 1
             append_jsonl(
@@ -470,6 +487,7 @@ def run_worker(
 
 
 def generate_queue(report_path: Path, queue_path: Path, *, merge: bool, now: str | None = None) -> dict[str, Any]:
+    """간 분석 리포트에서 재시도 큐를 생성하거나 기존 큐에 병합."""
     ts = coerce_now(now)
     report = json.loads(report_path.read_text(encoding="utf-8-sig"))
     generated = build_queue_from_report(report, now=ts)
@@ -479,6 +497,7 @@ def generate_queue(report_path: Path, queue_path: Path, *, merge: bool, now: str
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
+    """CLI 인자를 파싱."""
     p = argparse.ArgumentParser(description="Generate/process transcription_retry_queue.jsonl")
     sub = p.add_subparsers(dest="cmd", required=True)
 

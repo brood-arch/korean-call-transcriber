@@ -13,7 +13,7 @@ log = logging.getLogger(__name__)
 
 try:
     from src.config import AUDIO_DIR, STATE_DIR, TRANSCRIPT_DIR
-except Exception as exc:
+except ImportError as exc:  # noqa: BLE001
     log.debug("Falling back to local health-check paths: %s", exc)
     TRANSCRIPT_DIR = Path(os.environ.get("TRANSCRIPT_DIR", "./data/transcripts"))
     AUDIO_DIR = Path(os.environ.get("AUDIO_DIR", "./data/audio"))
@@ -26,7 +26,7 @@ EXTRACT_PROCESSED = STATE_DIR / "integrated_extraction" / "processed_files.json"
 
 
 def canonical_transcript_stem(stem: str) -> str:
-    """Return the source audio stem for generated transcript variants."""
+    """전사 파일명 stem에서 타임스탬프 접미사를 제거해 원본 오디오 stem을 반환."""
     import re
     m = re.match(r"^(.+_\d{14})_\d{6}$", stem)
     return m.group(1) if m else stem
@@ -42,7 +42,7 @@ def _load_and_merge_processed():
             if isinstance(ex, dict):
                 for k, v in ex.items():
                     pt.setdefault(k, v)
-        except Exception as exc:
+        except (json.JSONDecodeError, OSError) as exc:  # noqa: BLE001
             log.debug(
                 "Failed to load extraction processed index %s: %s",
                 EXTRACT_PROCESSED, exc,
@@ -102,7 +102,7 @@ def _load_batch_processed_stems():
                         stem = r.get("file", "")
                         if stem:
                             processed_stems.add(stem)
-        except Exception as exc:
+        except (json.JSONDecodeError, OSError) as exc:  # noqa: BLE001
             log.debug("Failed to inspect extraction batch %s: %s", bf, exc)
     return processed_stems
 
@@ -133,7 +133,8 @@ def _check_unprocessed_todos(now, pt, processed_stems):
     return issues
 
 
-def main():
+def main() -> int:
+    """파이프라인 건강 상태를 점검하고 이슈가 있으면 1, 없으면 0을 반환."""
     now = datetime.now(KST)
     pt = _load_and_merge_processed()
     blacklist = _load_blacklist()

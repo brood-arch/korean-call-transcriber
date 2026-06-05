@@ -40,7 +40,7 @@ def _log_to_file(msg: str) -> None:
         LOG.parent.mkdir(parents=True, exist_ok=True)
         with open(LOG, "a", encoding="utf-8") as f:
             f.write(line + "\n")
-    except Exception as exc:
+    except OSError as exc:  # noqa: BLE001
         log.warning(f"{ts} log write failed: {exc}")
     log.info(line, flush=True)
 
@@ -56,7 +56,7 @@ def get_gpu_free_mb() -> int:
         )
         if r.returncode == 0:
             return int(r.stdout.strip().split("\n")[0])
-    except Exception as exc:
+    except (subprocess.SubprocessError, OSError) as exc:  # noqa: BLE001
         _log_to_file(f"GPU memory query failed: {exc}")
     return -1
 
@@ -92,7 +92,7 @@ def load_audio(file: str, sr: int = 16000, retries: int = 2) -> np.ndarray:
         except subprocess.CalledProcessError as e:
             last_err = e
             _log_to_file(f"load_audio ffmpeg error rc={e.returncode} (attempt {attempt}/{retries})")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             last_err = e
             _log_to_file(f"load_audio unexpected error: {e} (attempt {attempt}/{retries})")
         if attempt < retries:
@@ -116,7 +116,7 @@ def _load_segments(segments_path: str) -> tuple[list, str | None]:
     """Load segments JSON. Returns (segments, error)."""
     try:
         return json.loads(Path(segments_path).read_text(encoding="utf-8")), None
-    except Exception as e:
+    except (json.JSONDecodeError, OSError) as e:  # noqa: BLE001
         _log_to_file(f"FATAL: cannot read segments file: {e}")
         return [], str(e)
 
@@ -154,7 +154,7 @@ def _run_alignment(
         if device == "cuda" and ("out of memory" in msg.lower() or "cuda" in msg.lower()):
             return _retry_alignment_cpu(segments, audio_path, msg)
         return segments, False, msg
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         msg = str(e)
         _log_to_file(f"ALIGN_FAIL: {msg}")
         return segments, False, msg
@@ -179,7 +179,7 @@ def _retry_alignment_cpu(
         del align_model, audio
         gc.collect()
         return segs, True, None
-    except Exception as e2:
+    except Exception as e2:  # noqa: BLE001
         msg = f"CPU retry also failed: {e2}"
         _log_to_file(f"ALIGN_FAIL (CPU retry): {msg}")
         return segments, False, msg
@@ -206,7 +206,7 @@ def _run_diarization(
         gc.collect()
         torch.cuda.empty_cache()
         return segs_final, True, None
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         msg = str(e)
         _log_to_file(f"DIARIZE_FAIL: {msg}")
         return segs_aligned, False, msg
@@ -234,7 +234,7 @@ def _write_result(out_path: Path, payload: dict) -> bool:
         tmp_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
         tmp_path.replace(out_path)
         return True
-    except Exception as e:
+    except OSError as e:  # noqa: BLE001
         _log_to_file(f"FATAL: cannot write result: {e}")
         return False
 

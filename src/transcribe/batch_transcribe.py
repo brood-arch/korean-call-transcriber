@@ -99,7 +99,6 @@ logging.basicConfig(
     filename=str(LOG_FILE), level=logging.INFO, encoding="utf-8",
     format="%(asctime)s %(message)s", force=True,
 )
-log = logging.info
 
 
 def parse_args():
@@ -129,7 +128,7 @@ def get_gpu_free_mb() -> int:
             capture_output=True, text=True, check=False, timeout=10,
         )
         return int((r.stdout or "0").strip().splitlines()[0])
-    except Exception as exc:
+    except (subprocess.SubprocessError, OSError) as exc:  # noqa: BLE001
         logging.debug("GPU memory query failed: %s", exc)
         return 0
 
@@ -169,7 +168,7 @@ def kill_gpu_hogs() -> list[str]:
             if "python" in name.lower():
                 subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True, timeout=10)
                 killed.append(f"{name}(PID {pid})")
-    except Exception as exc:
+    except (subprocess.SubprocessError, OSError) as exc:  # noqa: BLE001
         logging.debug("Failed to kill GPU processes: %s", exc)
     return killed
 
@@ -185,11 +184,11 @@ def get_audio_duration(file) -> float:
         m = re.search(r"Duration:\s*(\d+):(\d+):(\d+\.\d+)", r.stderr or "")
         if m:
             return int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
-    except Exception as exc:
+    except (subprocess.SubprocessError, OSError) as exc:  # noqa: BLE001
         logging.debug("ffmpeg duration probe failed for %s: %s", file, exc)
     try:
         return Path(file).stat().st_size / 1024 / 1024 * 60
-    except Exception as exc:
+    except OSError as exc:  # noqa: BLE001
         logging.debug("Stat-based duration fallback failed for %s: %s", file, exc)
         return 0
 
@@ -200,7 +199,7 @@ def _load_blacklist() -> dict:
     if BLACKLIST_FILE.exists():
         try:
             return json.loads(BLACKLIST_FILE.read_text(encoding="utf-8"))
-        except Exception as exc:
+        except (json.JSONDecodeError, OSError) as exc:  # noqa: BLE001
             logging.debug("Failed to load blacklist %s: %s", BLACKLIST_FILE, exc)
             return {}
     return {}
@@ -372,9 +371,9 @@ def transcribe_only(audio_path):
         from faster_whisper import BatchedInferencePipeline
         batched_model = BatchedInferencePipeline(model=model)
         use_batched = True
-        log("BatchedInferencePipeline enabled (batch_size=16)")
-    except Exception as _bat_err:
-        log(f"BatchedInferencePipeline unavailable ({_bat_err}), using sequential mode")
+        log.info("BatchedInferencePipeline enabled (batch_size=16)")
+    except (ImportError, RuntimeError, AttributeError) as _bat_err:  # noqa: BLE001
+        log.info("BatchedInferencePipeline unavailable (%s), using sequential mode", _bat_err)
 
     def _run_transcribe(path, offset=0.0):
         if use_batched:
@@ -402,7 +401,7 @@ def transcribe_only(audio_path):
     duration_hint = get_audio_duration(audio_path)
     if duration_hint > LONG_AUDIO_CHUNK_THRESHOLD_SEC:
         # Split long audio into chunks to avoid CT2 crashes
-        log(f"Long audio chunk mode: {Path(audio_path).name} duration={duration_hint:.1f}s")
+        log.info("Long audio chunk mode: %s duration=%.1fs", Path(audio_path).name, duration_hint)
         all_rows = []
         infos = []
         with tempfile.TemporaryDirectory(prefix="whisper_chunks_") as tmpdir:
@@ -454,7 +453,7 @@ def align_and_diarize_subprocess(audio_path, segments_json, no_diarize=False):
     """
     worker = Path(__file__).parent / "align_worker.py"
     if not worker.exists():
-        log(f"Worker script not found: {worker}")
+        log.info("Worker script not found: %s", worker)
         return None, {
             "align_ok": False, "diarize_ok": False,
             "align_error": "worker script not found",
@@ -464,8 +463,8 @@ def align_and_diarize_subprocess(audio_path, segments_json, no_diarize=False):
     tmp_json = OUTPUT_DIR / f"_segments_{Path(audio_path).stem}.json"
     try:
         tmp_json.write_text(json.dumps(segments_json, ensure_ascii=False), encoding="utf-8")
-    except Exception as e:
-        log(f"Failed to write segments JSON: {e}")
+    except OSError as e:  # noqa: BLE001
+        log.info("Failed to write segments JSON: %s", e)
         return segments_json, {
             "align_ok": False, "diarize_ok": False,
             "align_error": str(e),
@@ -492,7 +491,7 @@ def align_and_diarize_subprocess(audio_path, segments_json, no_diarize=False):
                 return segments, meta
             return data, {}
         else:
-            log(f"Worker failed: rc={result.returncode}")
+            log.info("Worker failed: rc=%s", result.returncode)
             tmp_json.unlink(missing_ok=True)
         return None, {
             "align_ok": False, "diarize_ok": False,
@@ -500,15 +499,15 @@ def align_and_diarize_subprocess(audio_path, segments_json, no_diarize=False):
             "diarize_error": None, "device": "unknown",
         }
     except subprocess.TimeoutExpired:
-        log(f"Worker timeout for {Path(audio_path).name}")
+        log.info("Worker timeout for %s", Path(audio_path).name)
         tmp_json.unlink(missing_ok=True)
         return None, {
             "align_ok": False, "diarize_ok": False,
             "align_error": "timeout",
             "diarize_error": None, "device": "unknown",
         }
-    except Exception as e:
-        log(f"Worker exception: {e}")
+    except Exception as e:  # noqa: BLE001
+        log.info("Worker exception: %s", e)
         tmp_json.unlink(missing_ok=True)
         return None, {
             "align_ok": False, "diarize_ok": False,
@@ -558,10 +557,10 @@ def _process_single_audio(audio_path, out_path, args, i, total):
         final_segments, audio_dur, quality_meta, had_diary_fail = _perform_transcription(audio_path, args)
         _write_transcript_output(audio_path, out_path, final_segments, audio_dur, quality_meta, had_diary_fail, t0)
         return True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         err_str = str(e)
         fail_count = blacklist_add(audio_path.stem, err_str)
-        log("FAIL (%d/%d) %s: %s", fail_count, MAX_CONSECUTIVE_FAILURES, audio_path.name, err_str[:80])
+        log.info("FAIL (%d/%d) %s: %s", fail_count, MAX_CONSECUTIVE_FAILURES, audio_path.name, err_str[:80])
         return False
 
 
@@ -570,7 +569,7 @@ def _prepare_pending_list(args):
     if args.file:
         f = Path(args.file)
         if not args.force and (OUTPUT_DIR / f"{f.stem}.txt").exists():
-            log(f"Already transcribed (skipping): {f.name}")
+            log.info("Already transcribed (skipping): %s", f.name)
             log.info(f"SKIP: {f.name} already transcribed", flush=True)
             return []
         return [f]
@@ -661,11 +660,11 @@ def _run_batch(pending, args):
 def main():
     args = parse_args()
     ensure_rules_file()
-    log("WhisperX transcription run started")
+    log.info("WhisperX transcription run started")
 
     pending = _prepare_pending_list(args)
     if not pending:
-        log("All files transcribed")
+        log.info("All files transcribed")
         log.info("ALL DONE")
         return 0
 

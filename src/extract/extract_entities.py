@@ -67,13 +67,15 @@ Transcription:
 {content}"""
 
 
-def get_all_transcription_files(base_dir) -> list[Path]:
+def get_all_transcription_files(base_dir: str | Path) -> list[Path]:
+    """디렉토리 내 전사 파일 목록을 반환한다."""
     base_dir = Path(base_dir)
     files = sorted(base_dir.glob("*.txt"))
     return [f for f in files if f.stat().st_size > 50]
 
 
 def compute_file_hash(path: Path) -> str:
+    """파일 내용의 MD5 해시를 계산한다."""
     content = path.read_bytes()
     return hashlib.md5(content).hexdigest()
 
@@ -94,7 +96,7 @@ def call_llm(content: str, api_key: str = "") -> dict | None:
 
 
 def parse_entity_response(text: str) -> dict:
-    """Parse raw LLM text into entity dict (used for direct prompt results)."""
+    """LLM 원시 텍스트를 엔티티 딕셔너리로 파싱한다."""
     import json as _json
 
     cleaned = text.strip()
@@ -142,7 +144,7 @@ def _process_entity_batch(batch_files, api_key, api_delay):
             else:
                 batch_errors.append({"file": file_id, "error": "api_failed"})
 
-        except Exception as e:
+        except (ValueError, OSError, RuntimeError) as e:  # noqa: BLE001
             log.warning("Entity extraction failed for %s: %s", file_id, e)
             batch_errors.append({"file": file_id, "error": str(e)})
 
@@ -178,8 +180,8 @@ def _is_batch_done(batch_result_path, force_restart):
         return False
 
 
-def run_extraction(args):
-    """Main extraction pipeline."""
+def run_extraction(args: argparse.Namespace) -> int:
+    """엔티티 추출 파이프라인 메인 실행 함수."""
     base_dir = Path(args.base_dir)
     state_dir = Path(args.state_dir)
     state_dir.mkdir(parents=True, exist_ok=True)

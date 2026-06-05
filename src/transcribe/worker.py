@@ -54,7 +54,7 @@ def get_audio_duration(path):
                 m = re.search(r"Duration:\s*(\d+):(\d+):(\d+\.\d+)", r.stderr)
                 if m:
                     return int(m.group(1))*3600 + int(m.group(2))*60 + float(m.group(3))
-        except Exception as exc:
+        except (subprocess.SubprocessError, OSError) as exc:  # noqa: BLE001
             log.warning("duration probe failed for %s: %s", cmd_name, exc)
             continue
     return 0.0
@@ -78,7 +78,7 @@ def transcribe_file(audio_path, model_path, compute_type, language, beam_size, o
         batched_model = BatchedInferencePipeline(model=model)
         use_batched = True
         log.info("BatchedInferencePipeline enabled (batch_size=16)", flush=True)
-    except Exception as _bat_err:
+    except (ImportError, RuntimeError, AttributeError) as _bat_err:  # noqa: BLE001
         log.info(f"BatchedInferencePipeline unavailable ({_bat_err}), using sequential mode", flush=True)
 
     def _run_batched(path, offset=0.0):
@@ -177,7 +177,7 @@ def main():
             args.audio, args.model, args.compute_type,
             args.language, args.beam_size, args.output_dir,
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — main() top-level catch
         log.error("transcribe_file failed: %s", e)
         return 2
 

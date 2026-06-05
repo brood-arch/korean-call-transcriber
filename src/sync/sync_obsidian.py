@@ -80,7 +80,7 @@ def read_source(filepath: Path) -> str:
 
 
 def format_phone(phone: str) -> str:
-    """Format a digit-only phone-like string for display."""
+    """숫자로만 된 전화번호를 표시 형식으로 변환."""
     if len(phone) == 11:
         return f"{phone[:3]}-{phone[3:7]}-{phone[7:]}"
     elif len(phone) == 10:
@@ -89,9 +89,7 @@ def format_phone(phone: str) -> str:
 
 
 def generate_md_filename(parsed: dict, existing_count: int) -> str:
-    """출력 마크다운 파일명 생성.
-    같은 날짜+거래처에 여러 통화가 있으면 시간 포함.
-    """
+    """출력 마크다운 파일명을 생성하며 같은 날짜+거래처에 여러 통화가 있으면 시간 포함."""
     cp = parsed["counterparty"] or parsed["phone"]
     date = parsed["date"]
     if existing_count > 0:
@@ -105,13 +103,13 @@ def generate_md_filename(parsed: dict, existing_count: int) -> str:
 
 
 def sanitize_filename(name: str) -> str:
-    """파일명에 사용할 수 없는 문자 제거."""
+    """파일명에 사용할 수 없는 문자를 제거."""
     # Windows 파일명 금지문자 + / 추가
     return re.sub(r'[<>:"/\\|?*]', '_', name).strip()
 
 
 def build_markdown(parsed: dict, content: str, source_path: Path) -> str:
-    """전사 텍스트를 Obsidian 마크다운으로 변환."""
+    """전사 텍스트를 Obsidian 호환 마크다운으로 변환."""
     cp = parsed["counterparty"]
     phone = parsed["phone"]
     date = parsed["date"]
@@ -163,7 +161,7 @@ def build_markdown(parsed: dict, content: str, source_path: Path) -> str:
 
 # ── 상태 관리 ─────────────────────────────────────────────────────
 def load_state() -> dict:
-    """처리 상태 로드."""
+    """동기화 처리 상태를 로드."""
     if STATE_FILE.exists():
         try:
             return json.loads(STATE_FILE.read_text(encoding="utf-8"))
@@ -173,15 +171,15 @@ def load_state() -> dict:
     return {"processed": {}, "last_run": None}
 
 
-def save_state(state: dict):
-    """처리 상태 저장."""
+def save_state(state: dict) -> None:
+    """동기화 처리 상태를 저장."""
     state["last_run"] = datetime.now().isoformat()
     safe_save_json(STATE_FILE, state, origin="sync_obsidian")
 
 
 # ── 거래처 인덱스 업데이트 ────────────────────────────────────────
-def update_counterparty_file(counterparty: str, transcript_link: str, date: str):
-    """거래처별 파일에 통화 내역 링크 추가."""
+def update_counterparty_file(counterparty: str, transcript_link: str, date: str) -> None:
+    """거래처별 파일에 통화 내역 링크를 추가."""
     if not counterparty:
         return
 
@@ -221,7 +219,7 @@ def update_counterparty_file(counterparty: str, transcript_link: str, date: str)
     safe_write_text(cp_file, content)
 
 
-def update_counterparty_index(new_counterparties: set[str]):
+def update_counterparty_index(new_counterparties: set[str]) -> None:
     """거래처_인덱스.md에 새 거래처가 있으면 추가."""
     if not new_counterparties or not COUNTERPARTY_INDEX.exists():
         return
@@ -311,7 +309,7 @@ def _process_parsed_files(parsed_files, key_counts, args):
                 "processed_at": datetime.now().isoformat(),
             }
             processed_count += 1
-        except Exception as e:
+        except (ValueError, OSError, RuntimeError) as e:  # noqa: BLE001
             errors.append(f"{src_file.name}: {e}")
     return processed_count, new_counterparties, errors, processed_updates
 
@@ -364,7 +362,8 @@ def _run_sync(args):
     _log_summary(args, processed_count, skipped_existing, skipped_parse, skipped_short, new_cps, errors)
 
 
-def main():
+def main() -> None:
+    """CLI 엔트리포인트: G드라이브 전사본을 Obsidian으로 동기화."""
     parser = argparse.ArgumentParser(
         description="G드라이브 전사본 → Obsidian 동기화"
     )

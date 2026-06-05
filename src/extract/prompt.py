@@ -4,8 +4,10 @@ Provides the hardcoded unified-extraction prompt and optional
 Langfuse-based prompt loading.
 """
 
+import json
 import logging
 import os
+from pathlib import Path
 
 log = logging.getLogger(__name__)
 
@@ -136,12 +138,7 @@ UNIFIED_EXTRACT_PROMPT = """다음 통화 전사본에서 8가지를 한꺼번�
 - 관계는 명확하게 언급된 경우만
 - 추출할 게 없으면 해당 필드를 빈 배열로
 - 금액은 정수 KRW로 정규화 (예: "120만 원" → 1200000)
-- 전사 교정 규칙 (반드시 적용, corrections에 기록):
-  - "재번 택장" → "채반 대자"
-  - "점표" → "전표" (회계 용어)
-  - "올프라자" → "오일프라자" (거래처명)
-  - "조리배" → "조립" (조립/재발송 문맥에서)
-  - "채반 택장" → "채반 대자"
+{corrections_block}
 - 개인정보(주민번호/카드번호)는 마스킹하고 risks에 표시
 - **오직 JSON만 출력. 마크다운, 설명, 주석 모두 금지**
 
@@ -149,8 +146,35 @@ UNIFIED_EXTRACT_PROMPT = """다음 통화 전사본에서 8가지를 한꺼번�
 {content}"""
 
 
-def get_prompt():
-    """Load prompt from Langfuse if available, else use hardcoded."""
+def _load_corrections_block() -> str:
+    """Load domain corrections from JSON and format as prompt bullet list.
+
+    Returns the formatted corrections block string, or empty string if
+    the JSON file is missing or unreadable.
+    """
+    corrections_path = Path(__file__).resolve().parent / "domain_corrections.json"
+    if not corrections_path.is_file():
+        return ""
+    try:
+        with open(corrections_path, encoding="utf-8") as f:
+            rules = json.load(f)
+    except (json.JSONDecodeError, OSError) as exc:
+        log.warning("Failed to load domain_corrections.json: %s", exc)
+        return ""
+    lines = []
+    for rule in rules:
+        note = f" ({rule['note']})" if rule.get("note") else ""
+        lines.append(f"  - \"{rule['from']}\" → \"{rule['to']}\"{note}")
+    if not lines:
+        return ""
+    return "- 전사 교정 규칙 (반드시 적용, corrections에 기록):\n" + "\n".join(lines)
+
+
+_CORRECTIONS_BLOCK = _load_corrections_block()
+
+
+def get_prompt() -> str:
+    """Langfuse에서 프롬프트를 로드하거나 하드코딩된 기본 프롬프트를 반환한다."""
     try:
         _lf_s = os.environ.get("LANGFUSE_SECRET_KEY", "")
         _lf_p = os.environ.get("LANGFUSE_PUBLIC_KEY", "")
@@ -162,16 +186,16 @@ def get_prompt():
                 compiled = lf_prompt.compile()
                 if compiled and len(compiled) > 100:
                     return compiled
-            except Exception as exc:
+            except (RuntimeError, ValueError) as exc:
                 log.debug("Langfuse prompt fetch failed: %s", exc)
-        return UNIFIED_EXTRACT_PROMPT
-    except Exception as exc:
+        return UNIFIED_EXTRACT_PROMPT.replace("{corrections_block}", _CORRECTIONS_BLOCK)
+    except (ImportError, RuntimeError) as exc:
         log.debug("Prompt setup failed: %s", exc)
-        return UNIFIED_EXTRACT_PROMPT
+        return UNIFIED_EXTRACT_PROMPT.replace("{corrections_block}", _CORRECTIONS_BLOCK)
 
 
-def setup_langfuse():
-    """Check if Langfuse is available based on environment variables."""
+def setup_langfuse() -> bool:
+    """환경변수 기반으로 Langfuse 사용 가능 여부를 확인한다."""
     _lf_s = os.environ.get("LANGFUSE_SECRET_KEY", "")
     _lf_p = os.environ.get("LANGFUSE_PUBLIC_KEY", "")
     return bool(_lf_s and _lf_p)

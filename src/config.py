@@ -12,7 +12,7 @@ log = logging.getLogger(__name__)
 WORKSPACE = Path(os.environ.get("KCT_WORKSPACE", Path.cwd())).resolve()
 
 
-DEFAULT_LLM_BASE_URL = "https://api.z.ai/api/coding/paas/v4"
+DEFAULT_LLM_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_LLM_MODEL = "glm-5.1"
 
 EXIT_OK = 0

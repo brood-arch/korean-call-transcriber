@@ -77,7 +77,7 @@ def get_schedule_relevant_transcripts(days: int) -> list[dict]:
             return []
         client = chromadb.PersistentClient(path=str(chroma_path))
         col = client.get_collection("transcripts")
-    except Exception as exc:
+    except (ImportError, OSError, RuntimeError) as exc:  # noqa: BLE001
         log.debug("ChromaDB not available for schedule extraction: %s", exc)
         return []
 
@@ -103,7 +103,7 @@ def get_schedule_relevant_transcripts(days: int) -> list[dict]:
                 if doc_path.exists():
                     content = doc_path.read_text(encoding="utf-8").strip()
                     all_results.append({"path": doc_id, "name": doc_path.stem, "content": content})
-        except Exception as exc:
+        except (ValueError, OSError, RuntimeError) as exc:  # noqa: BLE001
             log.debug("ChromaDB query failed for schedule: %s", exc)
             continue
 
@@ -160,7 +160,7 @@ def parse_schedule_response(text: str) -> dict:
             try:
                 data = _json.loads(cleaned[start:end])
                 return {"appointments": data.get("appointments", []), "todos": data.get("todos", [])}
-            except Exception as exc:
+            except (ValueError, _json.JSONDecodeError) as exc:  # noqa: BLE001
                 log.debug("Failed to parse schedule JSON after extraction: %s", exc)
         return {"appointments": [], "todos": []}
 
@@ -175,7 +175,7 @@ def parse_transcript_name(stem: str) -> dict:
         if len(dt_part) == 14 and dt_part.isdigit():
             try:
                 result["called_at"] = f"{dt_part[:4]}-{dt_part[4:6]}-{dt_part[6:8]} {dt_part[8:10]}:{dt_part[10:12]}"
-            except Exception as exc:
+            except (ValueError, IndexError) as exc:  # noqa: BLE001
                 log.debug("Failed to parse timestamp from stem %s: %s", stem, exc)
             phone_part = parts[-2]
             if phone_part.isdigit() and len(phone_part) >= 10:

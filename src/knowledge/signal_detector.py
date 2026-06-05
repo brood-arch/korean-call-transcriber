@@ -106,22 +106,7 @@ def _append_event(event: dict) -> None:
 # ── Fast scoring ─────────────────────────────────────────────────────────
 
 def fast_score_transcript(text: str) -> dict:
-    """3-band fast scoring for call transcripts.
-
-    A cheap, deterministic pre-filter that runs BEFORE any LLM API call.
-    Returns a score dict with band classification and per-signal breakdown.
-
-    Bands:
-        definite_keep  (score >= 0.85) → definitely process
-        borderline     (0.15 < score < 0.85) → admit for further processing
-        definite_drop  (score <= 0.15) → skip entirely
-
-    Args:
-        text: The transcript/text to score.
-
-    Returns:
-        dict with keys: score, band, should_process, signals, drop_reason
-    """
+    """통화 전사 텍스트의 3-밴드 빠른 채점 (LLM 호출 전 결정론적 전처리)."""
     tokens = text.strip().split()
     total_tokens = len(tokens)
     unique_tokens = len(set(tokens))
@@ -272,20 +257,7 @@ def detect_signals(
     source: str = "user_message",
     timestamp: str | None = None,
 ) -> dict:
-    """Detect signals (ideas + entities) from text.
-
-    Uses fast_score_transcript as a pre-filter: if the 3-band score
-    classifies the text as 'definite_drop', it's marked as operational
-    and skipped (no event recording, no LLM processing needed).
-
-    Args:
-        text: Text to analyze.
-        source: Message origin label.
-        timestamp: ISO timestamp (defaults to now in KST).
-
-    Returns:
-        dict: {ideas, entities, summary, fast_score, is_operational}
-    """
+    """텍스트에서 아이디어와 엔티티를 자동 추출 (fast_score 전처리 포함)."""
     if timestamp is None:
         timestamp = datetime.now(KST).isoformat()
 

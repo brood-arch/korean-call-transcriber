@@ -90,7 +90,7 @@ def check_today() -> dict:
         body = e.read().decode()[:300]
         log.error(f"{e.code} - {body}")
         return {"ok": False, "error": str(e)}
-    except Exception as e:
+    except (ConnectionError, TimeoutError, OSError) as e:  # noqa: BLE001
         log.error(f"{e}")
         return {"ok": False, "error": str(e)}
 

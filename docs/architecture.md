@@ -1,6 +1,6 @@
 # Architecture
 
-This repository contains a Korean call transcription pipeline with five main stages:
+This repository contains a Korean call transcription pipeline with multiple stages:
 
 ```text
 audio files
@@ -10,13 +10,19 @@ audio files
   -> TODO, schedule, and entity extraction
   -> optional Obsidian/wiki export and recovery queue analysis
 
-extended sources (v0.3.0):
+extended sources (v0.9.0):
   SMS messages  -> normalize -> extract TODOs
   Gmail inbox   -> classify  -> extract TODOs
   Naver Mail    -> IMAP archive -> extract TODOs
   Calendar      -> check events -> reminders
-  all sources   -> persistent TODO store (Jaccard dedup)
-                -> knowledge graph + signal detector
+  all sources   -> persistent TODO store (Jaccard dedup, 14-day retention)
+                -> knowledge graph + signal detector (3-band fast scoring)
+
+pipeline health:
+  gap_analyzer  -> classify pipeline gaps (missing transcript, diarization failure, etc.)
+  retry_queue   -> JSONL-based retry queue for conservative worker processing
+  validate_state -> state file existence, staleness, and integrity checks
+  minions_queue -> Postgres-backed durable job queue with DAG and crash recovery
 ```
 
 ## Package Layout
@@ -25,9 +31,12 @@ extended sources (v0.3.0):
 - `src/correct/`: transcript correction rules and Korean/English normalization.
 - `src/extract/`: LLM-assisted TODO, schedule, and entity extraction.
 - `src/sync/`: transcript export to an Obsidian-compatible vault.
-- `src/pipeline/`: shared paths, JSON helpers, and health checks.
+- `src/pipeline/`: shared paths, JSON helpers, health checks, state validation, and durable job queue.
 - `src/queue/`: deterministic gap analysis and retry queue generation.
-- `tests/`: focused regression tests for health checks, gap analysis, and retry queue behavior.
+- `src/knowledge/`: knowledge graph, entity extraction, and signal detection (3-band fast scoring).
+- `src/todo/`: persistent TODO management with Jaccard fuzzy dedup and 14-day retention.
+- `src/integrations/`: external service integrations (Gmail, Naver Mail, Calendar, SMS).
+- `tests/`: focused regression tests for health checks, gap analysis, retry queue, and correction rules.
 
 ## Configuration
 
@@ -63,3 +72,25 @@ Generated data, models, and local credentials are intentionally ignored by Git.
 `src.queue.gap_analyzer` classifies pipeline gaps into deterministic categories such as missing transcript, diarization failure, extraction pending, index pending, and sync pending.
 
 `src.queue.retry_queue` converts those gaps into a JSONL queue that can be reviewed or processed by a conservative worker.
+
+## Module Details
+
+### Knowledge Module (`src/knowledge/`)
+
+- `signal_detector.py`: 3-band fast scoring engine that automatically captures ideas, entities, and actionable signals from any text. Designed for real-time ingestion across all pipeline sources.
+- `graph.py`: entity relationship extraction and traversal for building a local knowledge graph.
+
+### TODO Module (`src/todo/`)
+
+- `persistent_store.py`: Jaccard fuzzy dedup (≥ 0.55 threshold), same-source merge to collapse related action items, completed-item tracking, and 14-day retention policy.
+
+### Queue Module (`src/queue/`)
+
+- `gap_analyzer`: deterministic gap classification for pipeline health auditing.
+- `retry_queue`: JSONL-based retry queue for conservative, reviewable worker processing.
+
+### Pipeline Module (`src/pipeline/`)
+
+- `health_check`: end-to-end pipeline health verification.
+- `validate_state`: automated state file existence, staleness, and integrity checks with optional auto-fix.
+- `minions_queue.py`: Postgres-backed durable job queue supporting fan-out, parent-child DAG dependencies, crash recovery, and priority scheduling.

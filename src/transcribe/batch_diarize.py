@@ -86,7 +86,7 @@ def _run_diarize_one(stem, segs_path, audio_path, transcript_dir, running_on_wsl
                 meta = payload.get("_meta", {})
                 if not meta.get("align_ok", False) or not meta.get("diarize_ok", False):
                     meta_ok = False
-            except Exception as exc:
+            except (json.JSONDecodeError, OSError) as exc:  # noqa: BLE001
                 log.warning("could not inspect result metadata: %s", exc)
             if not meta_ok or result.returncode not in (0, 3221226505):
                 log.warning("%s bytes, exit=%s, meta_ok=%s", size, result.returncode, meta_ok)
@@ -101,7 +101,7 @@ def _run_diarize_one(stem, segs_path, audio_path, transcript_dir, running_on_wsl
     except subprocess.TimeoutExpired:
         log.info("  TIMEOUT")
         return False
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         log.error("%s", e)
         return False
 

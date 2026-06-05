@@ -106,8 +106,8 @@ class IntegratedPipeline:
         self._last_notifications = []
         self._telegram_notified_new_todos = False
 
-    def get_transcription_files(self) -> list:
-        """Get files to process. If --today, only today's files. Skips already processed."""
+    def get_transcription_files(self) -> list[Path]:
+        """처리할 전사 파일 목록을 반환한다. --today 시 오늘 파일만, 이미 처리된 파일은 건너뛴다."""
         all_files = sorted(self.base_dir.glob("*.txt"))
         all_files = [f for f in all_files if f.stat().st_size > 50]
 
@@ -131,7 +131,9 @@ class IntegratedPipeline:
 
         return new_files
 
-    def _process_single_file(self, file_path, api_key, processed):
+    def _process_single_file(
+        self, file_path: Path, api_key: str, processed: dict,
+    ) -> tuple[dict | None, dict | None, None, bool]:
         """Process one file through fast-score, compression, LLM, fallback."""
         stem = file_path.stem
         content = file_path.read_text(encoding="utf-8").strip()
@@ -182,7 +184,8 @@ class IntegratedPipeline:
             self.stats["errors"] += 1
             return {"file": stem}, {"file": stem, "error": "api_or_parse_failed"}, None, False
 
-    def _update_stats_from_result(self, result):
+    def _update_stats_from_result(self, result: dict) -> None:
+        """추출 성공 결과에서 통계 카운터를 갱신한다."""
         """Update stats counters from a successful extraction result."""
         if result.get("summary", {}).get("one_line"):
             self.stats["summary"] += 1
@@ -194,7 +197,8 @@ class IntegratedPipeline:
         self.stats["risks"] += len(result.get("risks", []))
         self.stats["corrections"] += len(result.get("corrections", []))
 
-    def _notify_batch(self, batch_results, batch_ok_stems):
+    def _notify_batch(self, batch_results: list[dict], batch_ok_stems: list[str]) -> None:
+        """배치 결과에 대해 알림을 발송하고 TODO를 동기화한다."""
         """Send notifications for batch results."""
         new_todo_count, new_todos = sync_todos_to_persistent(batch_results, self.run_id)
         self._last_new_todos = new_todos
@@ -219,8 +223,11 @@ class IntegratedPipeline:
                 if new_todos:
                     self._telegram_notified_new_todos = True
 
-    def _finalize_batch(self, batch_idx, total_batches, batch_files, batch_results, batch_errors):
-        """Save batch results and checkpoint."""
+    def _finalize_batch(
+        self, batch_idx: int, total_batches: int, batch_files: list[Path],
+        batch_results: list[dict], batch_errors: list[dict],
+    ) -> None:
+        """배치 결과를 저장하고 체크포인트를 갱신한다."""
         if batch_errors:
             save_batch_result(
                 self.state_dir, batch_idx, batch_files,
@@ -242,7 +249,8 @@ class IntegratedPipeline:
             self.stats['money'], self.stats['risks'], self.stats['corrections'], len(batch_errors),
         )
 
-    def _print_final_summary(self, total_batches):
+    def _print_final_summary(self, total_batches: int) -> None:
+        """최종 실행 요약을 로그로 출력한다."""
         """Print the final run summary."""
         log.info("\n" + "=" * 60)
         log.info("INTEGRATED EXTRACTION COMPLETE")
@@ -266,7 +274,8 @@ class IntegratedPipeline:
         log.info("~60-70%% fewer LLM calls vs. separate scripts")
         log.info("=" * 60)
 
-    def _resolve_start_batch(self, total_batches):
+    def _resolve_start_batch(self, total_batches: int) -> int:
+        """시작 배치 인덱스를 결정한다."""
         """Determine starting batch index."""
         if self.today_only:
             start_batch = self.start_batch_override
@@ -280,7 +289,8 @@ class IntegratedPipeline:
         log.info("Run ID: %s", self.run_id)
         return start_batch
 
-    def _should_skip_batch(self, batch_idx):
+    def _should_skip_batch(self, batch_idx: int) -> bool:
+        """해당 배치가 이미 처리되었는지 확인한다."""
         """Check if a batch was already processed (non-today mode only)."""
         if self.today_only:
             return False
@@ -290,11 +300,12 @@ class IntegratedPipeline:
         try:
             existing = json.loads(batch_file.read_text(encoding="utf-8"))
             return existing.get("status") == "done"
-        except Exception as exc:
+        except (json.JSONDecodeError, OSError) as exc:  # noqa: BLE001
             logging.debug("Failed to inspect existing batch %s: %s", batch_file, exc)
             return False
 
-    def _process_batch(self, batch_idx, total_batches, batch_files, api_key):
+    def _process_batch(self, batch_idx: int, total_batches: int, batch_files: list[Path], api_key: str) -> None:
+        """단일 배치의 파일들을 파이프라인으로 처리한다."""
         """Process a single batch of files through the pipeline."""
         log.info("  [%04d/%04d] Processing %d files...", batch_idx, total_batches - 1, len(batch_files))
 
@@ -311,7 +322,7 @@ class IntegratedPipeline:
                     batch_errors.append(error)
                 if file_result:
                     batch_results.append(file_result)
-            except Exception as e:
+            except (ValueError, OSError, RuntimeError) as e:  # noqa: BLE001
                 log.error("%s: %s", file_path.stem, e)
                 batch_errors.append({"file": file_path.stem, "error": str(e)})
                 self.stats["errors"] += 1
@@ -321,7 +332,8 @@ class IntegratedPipeline:
         self._notify_batch(batch_results, [])
         self._finalize_batch(batch_idx, total_batches, batch_files, batch_results, batch_errors)
 
-    def run(self):
+    def run(self) -> None:
+        """전체 통합 추출 파이프라인을 실행한다."""
         api_key = get_llm_config()["api_key"]
         if not api_key:
             log.error("LLM_API_KEY environment variable not set.")
@@ -363,8 +375,11 @@ class IntegratedPipeline:
             log.info(json.dumps({"run_id": self.run_id, "stats": self.stats}, ensure_ascii=False, sort_keys=True))
         sys.exit(EXIT_PARTIAL if self.stats["errors"] > 0 else EXIT_OK)
 
-    def _run_batches(self, start_batch, total_batches, total_files, files, api_key):
-        """Execute all batches from start_batch to end."""
+    def _run_batches(
+        self, start_batch: int, total_batches: int, total_files: int,
+        files: list[Path], api_key: str,
+    ) -> None:
+        """start_batch부터 끝까지 모든 배치를 실행한다."""
         for batch_idx in range(start_batch, total_batches):
             self._last_batch_idx = batch_idx
             if self._should_skip_batch(batch_idx):
@@ -381,8 +396,8 @@ class IntegratedPipeline:
                 time.sleep(self.api_delay)
 
 
-def dry_run(args):
-    """Validate pipeline setup."""
+def dry_run(args: argparse.Namespace) -> bool:
+    """파이프라인 설정을 검증하는 드라이런을 수행한다."""
     base_dir = Path(args.base_dir)
     state_dir = Path(args.state_dir)
 
@@ -413,7 +428,7 @@ def dry_run(args):
             log.error("LLM_API_KEY NOT set")
         log.info(f"OK: LLM model: {config['model']}")
         log.info(f"OK: LLM base URL: {config['base_url']}")
-    except Exception as e:
+    except (ValueError, OSError) as e:  # noqa: BLE001
         log.warning(f"Could not check API key: {e}")
 
     completed = len(list(state_dir.glob("batch_*.json")))

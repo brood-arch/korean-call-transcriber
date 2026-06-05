@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "korean-call-transcriber"
-version = "0.8.2"
+version = "0.9.0"
 description = "Korean phone call transcription pipeline with Whisper + speaker diarization, auto TODO/schedule/entity extraction"
 readme = "README.md"
 license = {text = "MIT"}

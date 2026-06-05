@@ -45,13 +45,13 @@ def load_processed_index(processed_index_file: Path) -> dict:
     if processed_index_file.exists():
         try:
             return json.loads(processed_index_file.read_text(encoding="utf-8"))
-        except Exception as exc:
+        except (json.JSONDecodeError, OSError) as exc:
             log.debug("Failed to load processed index %s: %s", processed_index_file, redact_sensitive_text(repr(exc)))
     return {}
 
 
-def save_processed_index(processed_index_file: Path, index: dict):
-    """Save processed files index."""
+def save_processed_index(processed_index_file: Path, index: dict) -> None:
+    """처리된 파일 인덱스를 저장한다."""
     safe_save_json(processed_index_file, index, origin="integrated_pipeline")
 
 
@@ -67,13 +67,13 @@ def load_checkpoint(checkpoint_file: Path, today_only: bool = False) -> int:
                     log.info("Checkpoint stale (from %s), resetting for today", cp.get('last_updated', ''))
                     return 0
             return cp.get("last_completed_batch", -1) + 1
-        except Exception as exc:
+        except (json.JSONDecodeError, OSError) as exc:
             log.debug("Failed to load checkpoint %s: %s", checkpoint_file, redact_sensitive_text(repr(exc)))
     return 0
 
 
-def save_checkpoint(checkpoint_file: Path, batch_idx: int, total: int, stats: dict, run_id: str):
-    """Save pipeline checkpoint."""
+def save_checkpoint(checkpoint_file: Path, batch_idx: int, total: int, stats: dict, run_id: str) -> None:
+    """파이프라인 체크포인트를 저장한다."""
     data = {
         "last_completed_batch": batch_idx,
         "total_batches": total,
@@ -92,8 +92,8 @@ def save_batch_result(
     errors: list,
     status: str,
     run_id: str,
-):
-    """Save batch result to a JSON file."""
+) -> None:
+    """배치 결과를 JSON 파일로 저장한다."""
     output = {
         "batch_index": batch_idx,
         "run_id": run_id,
@@ -117,8 +117,8 @@ def load_persistent_todos() -> dict:
     return safe_load_json(PERSISTENT_TODO_FILE, default={"todos": {}}) or {"todos": {}}
 
 
-def save_persistent_todos(data: dict):
-    """Save persistent_todos.json."""
+def save_persistent_todos(data: dict) -> None:
+    """persistent_todos.json을 저장한다."""
     safe_save_json(PERSISTENT_TODO_FILE, data)
 
 
@@ -174,7 +174,7 @@ def sync_todos_to_persistent(batch_ok_results: list[dict], run_id: str) -> tuple
 # --- Notification state ---
 
 def appointment_key(appt: dict) -> str:
-    """Generate a dedup key for an appointment."""
+    """약속 중복 제거를 위한 고유 키를 생성한다."""
     source = normalize_source(appt.get("source", ""))
     return f"{appt.get('title','').strip()}|{appt.get('date')}|{appt.get('time')}|{source}"
 
@@ -185,7 +185,7 @@ def load_notification_state(notification_state_file: Path) -> dict:
     if notification_state_file.exists():
         try:
             state = json.loads(notification_state_file.read_text(encoding="utf-8"))
-        except Exception as exc:
+        except (json.JSONDecodeError, OSError) as exc:
             log.debug(
                 "Failed to load notification state %s: %s",
                 notification_state_file,
@@ -199,12 +199,13 @@ def load_notification_state(notification_state_file: Path) -> dict:
     return state
 
 
-def save_notification_state(notification_state_file: Path, state: dict):
-    """Save notification state atomically."""
+def save_notification_state(notification_state_file: Path, state: dict) -> None:
+    """알림 상태를 원자적으로 저장한다."""
     safe_save_json(notification_state_file, state, origin="integrated_pipeline")
 
 
-def collect_new_appointments(batch_results: list[dict], notification_state: dict) -> list:
+def collect_new_appointments(batch_results: list[dict], notification_state: dict) -> list[dict]:
+    """아직 알림을 보내지 않은 약속 목록을 수집한다."""
     """Collect appointments not yet notified."""
     prev_notified = set(notification_state.get("notified_appointments", {}).keys())
     new_appointments = []
@@ -231,8 +232,8 @@ def track_notified(
     new_todos: list,
     new_appointments: list,
     notifications: list | None = None,
-):
-    """Persist notified_todos/notified_appointments in shared state."""
+) -> None:
+    """알림 완료된 TODO/약속을 공유 상태에 기록한다."""
     try:
         state = load_notification_state(notification_state_file)
         now_iso = datetime.now(KST).isoformat()
@@ -264,14 +265,14 @@ def track_notified(
             "source": "extract_all",
         }
         save_notification_state(notification_state_file, state)
-    except Exception as e:
+    except (OSError, json.JSONDecodeError) as e:
         log.warning(f"notification state tracking failed: {redact_sensitive_text(str(e))}")
 
 
 # --- Telegram notification ---
 
-def send_telegram(text: str):
-    """Send a Telegram message using environment variables + curl subprocess."""
+def send_telegram(text: str) -> subprocess.CompletedProcess:
+    """환경변수와 curl 서브프로세스로 텔레그램 메시지를 발송한다."""
     try:
         token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
         chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
@@ -288,7 +289,7 @@ def send_telegram(text: str):
             ],
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20,
         )
-    except Exception as e:
+    except (subprocess.SubprocessError, OSError, RuntimeError) as e:  # noqa: BLE001
         class _Result:
             returncode = 1
             stdout = ""
@@ -353,8 +354,12 @@ def _build_notification_body(new_todos, new_appointments, active_todos, _fmt_pho
     return msg_lines
 
 
-def notify_new_items(new_todos: list, new_appointments: list | None = None, active_todos: list | None = None) -> list:
-    """Notify about new TODOs/appointments; include active TODO backlog with new TODO alerts."""
+def notify_new_items(
+    new_todos: list[dict],
+    new_appointments: list[dict] | None = None,
+    active_todos: list[dict] | None = None,
+) -> list[dict]:
+    """새 TODO/약속을 텔레그램으로 알림한다. 활성 TODO 백로그도 함께 표시한다."""
     def _fmt_phone(p):
         p = str(p or "")
         if not p or len(p) < 10:
@@ -367,7 +372,7 @@ def notify_new_items(new_todos: list, new_appointments: list | None = None, acti
         try:
             dt = datetime.fromisoformat(str(d))
             return f"{dt.month}/{dt.day} {dt.hour:02d}:{dt.minute:02d}"
-        except Exception as exc:
+        except (ValueError, TypeError) as exc:  # noqa: BLE001
             log.debug("Failed to parse notification date %r: %s", d, redact_sensitive_text(repr(exc)))
             return str(d)[:16]
 
@@ -393,8 +398,8 @@ def notify_new_items(new_todos: list, new_appointments: list | None = None, acti
     return notes
 
 
-def print_todo_alert():
-    """Print full active TODO report for immediate notification."""
+def print_todo_alert() -> None:
+    """전체 활성 TODO 리포트를 즉시 출력한다."""
     # NOTE: requires scripts/todo_report.py in WORKSPACE (not in public repo)
     try:
         result = subprocess.run(
@@ -406,5 +411,5 @@ def print_todo_alert():
             log.info("🚨 신규 TODO 발생 — 전체 활성 할 일:")
             log.info(f"{'='*50}")
             log.info(result.stdout)
-    except Exception as e:
+    except (subprocess.SubprocessError, OSError) as e:
         log.warning(f"todo alert failed: {redact_sensitive_text(str(e))}")

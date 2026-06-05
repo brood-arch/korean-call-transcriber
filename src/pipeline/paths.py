@@ -27,7 +27,7 @@ def is_wsl() -> bool:
     """Return True if running inside Windows Subsystem for Linux."""
     try:
         return os.name != "nt" and "microsoft" in Path("/proc/version").read_text(errors="ignore").lower()
-    except Exception:
+    except (OSError, UnicodeDecodeError):  # noqa: BLE001
         return False
 
 

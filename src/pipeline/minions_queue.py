@@ -105,7 +105,8 @@ class MinionsQueue:
     for crash recovery.
     """
 
-    def __init__(self, db_config: dict | None = None):
+    def __init__(self, db_config: dict | None = None) -> None:
+        """Postgres 연결 설정으로 MinionsQueue 인스턴스를 초기화."""
         self.db_config = db_config or _db_config()
         self._test_connection()
 
@@ -118,7 +119,8 @@ class MinionsQueue:
         )
         conn.close()
 
-    def _conn(self):
+    def _conn(self) -> "psycopg2.connection":
+        """새 Postgres 연결을 생성해 반환."""
         return (
             psycopg2.connect(self.db_config["dsn"])
             if "dsn" in self.db_config
@@ -240,7 +242,7 @@ class MinionsQueue:
             conn.close()
 
     def get_progress(self, job_id: int) -> Optional[dict]:
-        """Get job progress info."""
+        """잡 진행 상태 정보를 조회."""
         conn = self._conn()
         try:
             cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -257,7 +259,7 @@ class MinionsQueue:
             conn.close()
 
     def stats(self) -> dict:
-        """Get queue statistics."""
+        """큐 상태별 통계를 반환."""
         conn = self._conn()
         try:
             cur = conn.cursor()
@@ -284,7 +286,7 @@ class MinionsQueue:
     # ── Lifecycle ───────────────────────────────────────
 
     def cancel(self, job_id: int) -> bool:
-        """Cancel a pending or active job."""
+        """대기 중이거나 활성인 잡을 취소."""
         conn = self._conn()
         try:
             cur = conn.cursor()
@@ -299,7 +301,7 @@ class MinionsQueue:
             conn.close()
 
     def pause(self, job_id: int) -> bool:
-        """Pause an active job."""
+        """활성 잡을 일시 정지."""
         conn = self._conn()
         try:
             cur = conn.cursor()
@@ -314,7 +316,7 @@ class MinionsQueue:
             conn.close()
 
     def resume(self, job_id: int) -> bool:
-        """Resume a paused job."""
+        """일시 정지된 잡을 재개."""
         conn = self._conn()
         try:
             cur = conn.cursor()
@@ -329,7 +331,7 @@ class MinionsQueue:
             conn.close()
 
     def replay(self, job_id: int, data_overrides: dict | None = None) -> Optional[int]:
-        """Create a new job as a replay of an existing one."""
+        """기존 잡을 재실행하는 새 잡을 생성."""
         original = self.get_job(job_id)
         if not original:
             return None
@@ -351,7 +353,7 @@ class MinionsQueue:
     # ── Steering ────────────────────────────────────────
 
     def send_message(self, job_id: int, payload: dict, sender: str = "operator") -> int:
-        """Send a message to a running job (for steering)."""
+        """실행 중인 잡에 스티어링 메시지를 전송."""
         conn = self._conn()
         try:
             cur = conn.cursor()
@@ -365,7 +367,7 @@ class MinionsQueue:
             conn.close()
 
     def read_messages(self, job_id: int) -> list[dict]:
-        """Read and mark unread messages for a job."""
+        """잡의 읽지 않은 메시지를 읽고 읽음 처리."""
         conn = self._conn()
         try:
             cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -384,7 +386,7 @@ class MinionsQueue:
     # ── Logging ─────────────────────────────────────────
 
     def log(self, job_id: int, level: str, message: str, metadata: dict | None = None) -> None:
-        """Write a log entry for a job."""
+        """잡에 로그 엔트리를 기록."""
         conn = self._conn()
         try:
             cur = conn.cursor()
@@ -399,7 +401,7 @@ class MinionsQueue:
     # ── Worker ──────────────────────────────────────────
 
     def claim_next(self, queue: str = "default") -> Optional[dict]:
-        """Atomically claim the next pending job (SKIP LOCKED)."""
+        """원자적으로 다음 대기 잡을 획득(SKIP LOCKED)."""
         conn = self._conn()
         try:
             cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -427,7 +429,7 @@ class MinionsQueue:
             conn.close()
 
     def complete(self, job_id: int, result: dict) -> None:
-        """Mark a job as completed."""
+        """잡을 완료 상태로 표시."""
         conn = self._conn()
         try:
             cur = conn.cursor()
@@ -465,7 +467,7 @@ class MinionsQueue:
             conn.close()
 
     def update_progress(self, job_id: int, progress: dict) -> None:
-        """Update job progress data."""
+        """잡 진행 데이터를 갱신."""
         conn = self._conn()
         try:
             cur = conn.cursor()
@@ -480,14 +482,14 @@ class MinionsQueue:
     # ── Shell Job Executor ──────────────────────────────
 
     def execute_shell(self, job: dict) -> dict:
-        """Execute a shell/subprocess job.
+        """셸/서브프로세스 잡을 실행.
 
-        Preferred payload format (v0.7+):
+        선호 페이로드 형식(v0.7+):
             {"argv": ["python", "-m", "src.extract.extract_all", "--today"],
              "cwd": "/path/to/workspace",
              "env": {"KCT_WORKSPACE": "/path/to/workspace"}}
 
-        Legacy format (deprecated, removal in v0.8):
+        레거시 형식( deprecated, v0.8에서 제거 예정):
             {"cmd": "python script.py", "cwd": "/path", "env": {...}}
         """
         payload = job["payload"]
@@ -539,7 +541,7 @@ class MinionsQueue:
             }
         except subprocess.TimeoutExpired:
             return {"exit_code": -1, "error": f"Timeout ({timeout}s)"}
-        except Exception as e:
+        except (OSError, RuntimeError) as e:  # noqa: BLE001
             return {"exit_code": -1, "error": redact_sensitive_text(str(e))}
 
     # ── Fan-out ────────────────────────────────────────
@@ -595,11 +597,7 @@ class MinionsQueue:
         return {"parent_id": parent_id, "children": child_ids, "aggregator_id": agg_id}
 
     def check_children_complete(self, parent_id: int) -> dict:
-        """Check if all children of a parent job are complete.
-
-        Returns:
-            {"all_complete": bool, "completed": int, "total": int, "results": [dict, ...]}
-        """
+        """부모 잡의 모든 자식 잡 완료 여부를 확인."""
         conn = self._conn()
         try:
             cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -622,7 +620,7 @@ class MinionsQueue:
             conn.close()
 
     def activate_aggregator(self, parent_id: int) -> Optional[int]:
-        """Activate the aggregator job for a parent once children are done."""
+        """자식 잡 완료 후 부모의 집계자 잡을 활성화."""
         conn = self._conn()
         try:
             cur = conn.cursor()
@@ -711,13 +709,7 @@ class MinionsQueue:
                 conn.close()
 
     def work_loop(self, queue: str = "default", interval: float = 5.0, once: bool = False) -> None:
-        """Main worker loop: claim and execute pending jobs.
-
-        Args:
-            queue: Queue to poll.
-            interval: Seconds between polls when no job is available.
-            once: Run one iteration and exit.
-        """
+        """메인 워커 루프: 대기 잡을 획득하고 실행."""
         log.info(f"Minions worker started (queue={queue}, interval={interval}s)")
 
         while True:

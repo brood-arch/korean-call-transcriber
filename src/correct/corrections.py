@@ -67,7 +67,7 @@ def load_rules() -> dict[str, Any]:
             current_mtime = RULES_PATH.stat().st_mtime
             if current_mtime <= _rules_mtime:
                 return _rules_cache
-        except Exception as exc:
+        except OSError as exc:
             log.debug("Failed to stat correction rules %s: %s", RULES_PATH, exc)
 
     # Reload from disk
@@ -77,7 +77,7 @@ def load_rules() -> dict[str, Any]:
 
     try:
         data = json.loads(RULES_PATH.read_text(encoding="utf-8"))
-    except Exception as exc:
+    except (json.JSONDecodeError, OSError) as exc:
         log.debug("Failed to load correction rules %s: %s", RULES_PATH, exc)
         data = DEFAULT_RULES.copy()
 
@@ -89,7 +89,7 @@ def load_rules() -> dict[str, Any]:
     _rules_cache = data
     try:
         _rules_mtime = RULES_PATH.stat().st_mtime
-    except Exception as exc:
+    except OSError as exc:
         log.debug("Failed to stat correction rules after load %s: %s", RULES_PATH, exc)
         _rules_mtime = 0.0
 
@@ -201,7 +201,7 @@ def log_event(event: dict[str, Any]) -> None:
             tmp = LOG_PATH.with_suffix(".jsonl.tmp")
             tmp.write_text("\n".join(keep_lines) + "\n", encoding="utf-8")
             tmp.replace(LOG_PATH)
-    except Exception as exc:
+    except OSError as exc:
         log.warning("Log rotation failed: %s", exc)
 
     line = json.dumps(event, ensure_ascii=False) + "\n"

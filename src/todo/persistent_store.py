@@ -72,21 +72,17 @@ def _normalize(title) -> str:
 # ── Store I/O ───────────────────────────────────────────────────────────
 
 def load_store() -> dict:
-    """Load persistent TODO store from disk.
-
-    Returns:
-        Store dict with keys: version, todos (dict), last_updated.
-    """
+    """디스크에서 영구 TODO 스토어를 로드."""
     if PERSISTENT_FILE.exists():
         try:
             return json.loads(PERSISTENT_FILE.read_text(encoding="utf-8"))
-        except Exception:
+        except (json.JSONDecodeError, OSError):
             log.warning("Failed to parse %s, starting fresh", PERSISTENT_FILE)
     return {"version": 1, "todos": {}, "last_updated": _now()}
 
 
 def save_store(store: dict) -> None:
-    """Save persistent TODO store atomically (write-to-temp then rename)."""
+    """영구 TODO 스토어를 원자적으로 디스크에 저장."""
     store["last_updated"] = _now()
     PERSISTENT_FILE.parent.mkdir(parents=True, exist_ok=True)
     tmp = PERSISTENT_FILE.with_suffix(".tmp")
@@ -103,7 +99,7 @@ def _load_completed_titles() -> set:
     try:
         with open(COMPLETED_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-    except Exception as exc:
+    except (json.JSONDecodeError, OSError) as exc:
         log.warning("Failed to parse %s, treating completed set as empty: %s", COMPLETED_FILE, exc)
         return set()
 
@@ -260,7 +256,7 @@ def _add_new_todos(todos, new_todos, completed_set):
 
 
 def merge_todos(store: dict, new_todos: list) -> list:
-    """Merge newly extracted TODOs into persistent store."""
+    """새로 추출된 TODO를 영구 스토어에 병합."""
     new_todos = _dedup_same_source(new_todos)
     completed_set = _load_completed_titles()
     todos = store.get("todos", {})
@@ -274,7 +270,7 @@ def merge_todos(store: dict, new_todos: list) -> list:
 
 
 def get_active(store: dict) -> list:
-    """Get all active TODOs from persistent store (excluding completed, exact + fuzzy)."""
+    """완료되지 않은 활성 TODO 목록을 반환."""
     completed_set = _load_completed_titles()
     return [
         t for t in store.get("todos", {}).values()
@@ -283,7 +279,7 @@ def get_active(store: dict) -> list:
 
 
 def todo_key(todo: dict) -> str:
-    """Generate a stable key for a TODO entry."""
+    """TODO 엔트리의 안정적인 고유키를 생성."""
     return f"{_normalize(todo.get('title', ''))}|{todo.get('source', '')}"
 
 
@@ -291,18 +287,7 @@ def sync_completed_to_file(
     store: dict,
     completed_path: str = "state/completed_todos.json",
 ) -> int:
-    """Sync completed TODOs to completed_todos.json for dedup.
-
-    Handles both legacy string format and dict format in completed_titles.
-    Always writes back as list of dicts with {title, source, status}.
-
-    Args:
-        store: The persistent store dict.
-        completed_path: Path to the completed TODOs file.
-
-    Returns:
-        Number of completed entries after sync.
-    """
+    """완료된 TODO를 completed_todos.json에 동기화하여 중복 추출을 방지."""
     import json as _json
 
     # Collect completed entries from persistent store
