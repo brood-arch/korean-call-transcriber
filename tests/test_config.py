@@ -72,7 +72,7 @@ class TestLLMConfig:
         import src.config as cfg
         importlib.reload(cfg)
         config = cfg.get_llm_config()
-        assert config.model == "glm-5.1"
+        assert config.model == "gpt-4o-mini"
 
 
 class TestPathConstants:

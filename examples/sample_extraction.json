@@ -1,20 +1,72 @@
 {
   "source_file": "sample_call.m4a",
-  "summary": "신형송풍기가 XX기계에 환풍기 날개 200개 납기 확인 및 채반 대자 500개 견적 요청",
+  "summary": {
+    "one_line": "신형송풍기가 XX기계에 환풍기 날개 200개 납기 확인 및 채반 대자 500개 견적 요청",
+    "details": [
+      "환풍기 날개 200개 납기 확인",
+      "채반 대자 500개 견적 요청"
+    ],
+    "call_type": "order",
+    "overall_confidence": 0.92
+  },
   "todos": [
     {
+      "id_hint": "todo_견적발송",
       "title": "채반 대자 500개 견적 메일 발송",
-      "assignee": "XX기계",
-      "deadline": "오늘 중",
-      "priority": "high"
+      "owner": "me",
+      "priority": "high",
+      "status": "new",
+      "due_date": "2025-06-05",
+      "due_time": null,
+      "context": "XX기계에서 견적 요청",
+      "source_quote": "채반 대자 500개 견적 좀 보내주세요",
+      "confidence": 0.95
     }
   ],
+  "appointments": [],
   "entities": [
-    {"name": "신형송풍기", "role": "buyer"},
-    {"name": "XX기계", "role": "supplier"}
+    {
+      "name": "신형송풍기",
+      "type": "Organization",
+      "canonical_name": "(주)신형송풍기",
+      "role": "customer",
+      "attributes": {},
+      "source_quote": "신형송풍기입니다",
+      "confidence": 0.98
+    },
+    {
+      "name": "XX기계",
+      "type": "Organization",
+      "canonical_name": "XX기계",
+      "role": "supplier",
+      "attributes": {},
+      "source_quote": "XX기계입니다",
+      "confidence": 0.98
+    }
   ],
   "products": [
-    {"name": "환풍기 날개", "quantity": 200, "status": "출고 예정 (금요일)"},
-    {"name": "채반 대자", "quantity": 500, "status": "견적 대기"}
-  ]
+    {
+      "name": "환풍기 날개",
+      "canonical_name": null,
+      "category": "날개",
+      "spec": null,
+      "quantity": {"value": 200, "unit": "개"},
+      "action": "deliver",
+      "source_quote": "환풍기 날개 200개",
+      "confidence": 0.93
+    },
+    {
+      "name": "채반 대자",
+      "canonical_name": null,
+      "category": "채반",
+      "spec": null,
+      "quantity": {"value": 500, "unit": "개"},
+      "action": "quote",
+      "source_quote": "채반 대자 500개 견적",
+      "confidence": 0.91
+    }
+  ],
+  "money": [],
+  "risks": [],
+  "corrections": []
 }

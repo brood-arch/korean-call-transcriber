@@ -290,8 +290,8 @@ python -m src.pipeline.validate_state --quiet
 | Variable | Description | Default |
 |---|---|---|
 | `LLM_API_KEY` | LLM API key (`ZAI_API_KEY` is also supported for backward compatibility) | (required) |
-| `LLM_BASE_URL` | OpenAI-compatible API base URL (`ZAI_BASE_URL` is also supported) | `https://api.z.ai/api/coding/paas/v4` |
-| `LLM_MODEL` | Model name | `glm-5.1` |
+| `LLM_BASE_URL` | OpenAI-compatible API base URL (`ZAI_BASE_URL` is also supported) | `https://api.openai.com/v1` |
+| `LLM_MODEL` | Model name | `gpt-4o-mini` |
 | `LLM_DISABLE_THINKING` | Disable GLM thinking traces (`auto`, `true`, `false`) | `auto` |
 | `KCT_AUDIO_DIR` | Audio source directory (`AUDIO_DIR` is also supported for backward compatibility) | `data/audio` |
 | `KCT_TRANSCRIPT_DIR` | Transcript output directory (`TRANSCRIPT_DIR` is also supported for backward compatibility) | `output/transcripts` |

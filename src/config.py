@@ -13,7 +13,7 @@ WORKSPACE = Path(os.environ.get("KCT_WORKSPACE", Path.cwd())).resolve()
 
 
 DEFAULT_LLM_BASE_URL = "https://api.openai.com/v1"
-DEFAULT_LLM_MODEL = "glm-5.1"
+DEFAULT_LLM_MODEL = "gpt-4o-mini"
 
 EXIT_OK = 0
 EXIT_PARTIAL = 1
