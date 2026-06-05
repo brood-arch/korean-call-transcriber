@@ -2,7 +2,7 @@ import json
 
 
 def test_transcription_gap_analyzer_taxonomy_and_derivatives(tmp_path):
-    from src.queue import gap_analyzer as a
+    from kct.queue import gap_analyzer as a
 
     audio_dir = tmp_path / "audio"
     transcript_dir = tmp_path / "transcripts"

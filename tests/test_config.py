@@ -1,4 +1,4 @@
-"""Tests for src.config — env resolution, defaults, deprecation warnings."""
+"""Tests for kct.config — env resolution, defaults, deprecation warnings."""
 
 import pytest
 
@@ -9,7 +9,7 @@ class TestWorkspaceResolution:
         # Re-import to get fresh resolution
         import importlib
 
-        import src.config as cfg
+        import kct.config as cfg
         importlib.reload(cfg)
         assert cfg.WORKSPACE.is_absolute()
 
@@ -17,7 +17,7 @@ class TestWorkspaceResolution:
         monkeypatch.setenv("KCT_WORKSPACE", str(tmp_path))
         import importlib
 
-        import src.config as cfg
+        import kct.config as cfg
         importlib.reload(cfg)
         assert cfg.WORKSPACE == tmp_path.resolve()
 
@@ -28,7 +28,7 @@ class TestGetEnv:
         monkeypatch.setenv("KCT_TEST_B", "hello")
         import importlib
 
-        import src.config as cfg
+        import kct.config as cfg
         importlib.reload(cfg)
         result = cfg.get_env("KCT_TEST_A", "KCT_TEST_B", default="")
         assert result == "hello"
@@ -38,7 +38,7 @@ class TestGetEnv:
         monkeypatch.delenv("KCT_NONEXISTENT_XYZ2", raising=False)
         import importlib
 
-        import src.config as cfg
+        import kct.config as cfg
         importlib.reload(cfg)
         result = cfg.get_env("KCT_NONEXISTENT_XYZ", "KCT_NONEXISTENT_XYZ2", default="fallback")
         assert result == "fallback"
@@ -50,7 +50,7 @@ class TestLLMConfig:
         monkeypatch.delenv("ZAI_API_KEY", raising=False)
         import importlib
 
-        import src.config as cfg
+        import kct.config as cfg
         importlib.reload(cfg)
         config = cfg.get_llm_config()
         assert config.api_key == ""
@@ -60,7 +60,7 @@ class TestLLMConfig:
         monkeypatch.setenv("ZAI_API_KEY", "zai-key")
         import importlib
 
-        import src.config as cfg
+        import kct.config as cfg
         importlib.reload(cfg)
         config = cfg.get_llm_config()
         assert config.api_key == "llm-key"
@@ -69,7 +69,7 @@ class TestLLMConfig:
         monkeypatch.delenv("LLM_MODEL", raising=False)
         import importlib
 
-        import src.config as cfg
+        import kct.config as cfg
         importlib.reload(cfg)
         config = cfg.get_llm_config()
         assert config.model == "gpt-4o-mini"
@@ -80,7 +80,7 @@ class TestPathConstants:
         monkeypatch.delenv("KCT_WORKSPACE", raising=False)
         import importlib
 
-        import src.config as cfg
+        import kct.config as cfg
         importlib.reload(cfg)
         assert cfg.TRANSCRIPT_DIR.is_absolute()
 
@@ -88,7 +88,7 @@ class TestPathConstants:
         monkeypatch.setenv("KCT_WORKSPACE", str(tmp_path))
         import importlib
 
-        import src.config as cfg
+        import kct.config as cfg
         importlib.reload(cfg)
         assert cfg.STATE_DIR == tmp_path.resolve() / "state"
 
@@ -99,7 +99,7 @@ class TestPathFromEnv:
         monkeypatch.delenv("AUDIO_DIR", raising=False)
         import importlib
 
-        import src.config as cfg
+        import kct.config as cfg
         importlib.reload(cfg)
         assert cfg.AUDIO_DIR.is_absolute()
 
@@ -107,7 +107,7 @@ class TestPathFromEnv:
         monkeypatch.setenv("KCT_AUDIO_DIR", str(tmp_path / "custom_audio"))
         import importlib
 
-        import src.config as cfg
+        import kct.config as cfg
         importlib.reload(cfg)
         assert cfg.AUDIO_DIR == (tmp_path / "custom_audio").resolve()
 
@@ -116,7 +116,7 @@ class TestConstants:
     def test_exit_codes_are_int(self):
         import importlib
 
-        import src.config as cfg
+        import kct.config as cfg
         importlib.reload(cfg)
         assert cfg.EXIT_OK == 0
         assert cfg.EXIT_PARTIAL == 1
@@ -129,7 +129,7 @@ class TestConstants:
         monkeypatch.delenv("KCT_ENABLE_SHELL_JOBS", raising=False)
         import importlib
 
-        import src.config as cfg
+        import kct.config as cfg
         importlib.reload(cfg)
         assert cfg.MY_NAME == "Me"
         assert cfg.WHISPER_MODEL == "large-v3-turbo"
@@ -140,10 +140,10 @@ class TestConstants:
         monkeypatch.delenv("LLM_API_KEY", raising=False)
         import importlib
 
-        import src.config as cfg
+        import kct.config as cfg
         importlib.reload(cfg)
         import logging
-        with caplog.at_level(logging.WARNING, logger="src.config"):
+        with caplog.at_level(logging.WARNING, logger="kct.config"):
             config = cfg.get_llm_config()
         assert config.api_key == "test-deprecated-key"
         assert any("deprecated" in r.message for r in caplog.records)
@@ -154,7 +154,7 @@ class TestLLMConfigExplicitKey:
         monkeypatch.setenv("LLM_API_KEY", "env-key")
         import importlib
 
-        import src.config as cfg
+        import kct.config as cfg
         importlib.reload(cfg)
         config = cfg.get_llm_config(api_key="explicit-key")
         assert config.api_key == "explicit-key"
@@ -164,7 +164,7 @@ class TestLLMConfigExplicitKey:
         monkeypatch.delenv("ZAI_BASE_URL", raising=False)
         import importlib
 
-        import src.config as cfg
+        import kct.config as cfg
         importlib.reload(cfg)
         config = cfg.get_llm_config()
         assert config.base_url == "https://api.openai.com/v1"
@@ -173,7 +173,7 @@ class TestLLMConfigExplicitKey:
         monkeypatch.setenv("LLM_BASE_URL", "https://custom.api/v1/")
         import importlib
 
-        import src.config as cfg
+        import kct.config as cfg
         importlib.reload(cfg)
         config = cfg.get_llm_config()
         assert config.base_url == "https://custom.api/v1"
@@ -182,7 +182,7 @@ class TestLLMConfigExplicitKey:
         monkeypatch.delenv("LLM_DISABLE_THINKING", raising=False)
         import importlib
 
-        import src.config as cfg
+        import kct.config as cfg
         importlib.reload(cfg)
         config = cfg.get_llm_config()
         assert config.disable_thinking == "auto"
@@ -191,7 +191,7 @@ class TestLLMConfigExplicitKey:
         monkeypatch.setenv("LLM_DISABLE_THINKING", "TRUE")
         import importlib
 
-        import src.config as cfg
+        import kct.config as cfg
         importlib.reload(cfg)
         config = cfg.get_llm_config()
         assert config.disable_thinking == "true"
@@ -199,7 +199,7 @@ class TestLLMConfigExplicitKey:
     def test_llmconfig_is_frozen(self, monkeypatch):
         import importlib
 
-        import src.config as cfg
+        import kct.config as cfg
         importlib.reload(cfg)
         config = cfg.get_llm_config()
         import dataclasses
@@ -212,7 +212,7 @@ class TestPathFromEnvDeprecated:
         monkeypatch.setenv("CHROMA_INDEX_DIR", str(tmp_path / "old_chroma"))
         import importlib
 
-        import src.config as cfg
+        import kct.config as cfg
         importlib.reload(cfg)
         # Should resolve the deprecated CHROMA_INDEX_DIR
         assert cfg.CHROMA_INDEX_DIR == (tmp_path / "old_chroma").resolve()
@@ -223,7 +223,7 @@ class TestMorePathConstants:
         monkeypatch.setenv("KCT_WORKSPACE", str(tmp_path))
         import importlib
 
-        import src.config as cfg
+        import kct.config as cfg
         importlib.reload(cfg)
         assert cfg.OUTPUT_DIR == tmp_path.resolve() / "output"
 
@@ -231,7 +231,7 @@ class TestMorePathConstants:
         monkeypatch.setenv("KCT_WORKSPACE", str(tmp_path))
         import importlib
 
-        import src.config as cfg
+        import kct.config as cfg
         importlib.reload(cfg)
         assert cfg.LOG_DIR == tmp_path.resolve() / "logs"
 
@@ -239,7 +239,7 @@ class TestMorePathConstants:
         monkeypatch.setenv("KCT_WORKSPACE", str(tmp_path))
         import importlib
 
-        import src.config as cfg
+        import kct.config as cfg
         importlib.reload(cfg)
         assert cfg.MODELS_DIR == tmp_path.resolve() / "models"
 
@@ -247,7 +247,7 @@ class TestMorePathConstants:
         monkeypatch.setenv("KCT_WORKSPACE", str(tmp_path))
         import importlib
 
-        import src.config as cfg
+        import kct.config as cfg
         importlib.reload(cfg)
         assert cfg.OBSIDIAN_VAULT == tmp_path.resolve() / "output" / "obsidian"
 
@@ -257,7 +257,7 @@ class TestTranscriptionConstants:
         monkeypatch.delenv("WHISPER_COMPUTE_TYPE", raising=False)
         import importlib
 
-        import src.config as cfg
+        import kct.config as cfg
         importlib.reload(cfg)
         assert cfg.WHISPER_COMPUTE_TYPE == "float16"
 
@@ -265,7 +265,7 @@ class TestTranscriptionConstants:
         monkeypatch.setenv("KCT_WORKSPACE", str(tmp_path))
         import importlib
 
-        import src.config as cfg
+        import kct.config as cfg
         importlib.reload(cfg)
         assert cfg.TRANSCRIBE_LOG == tmp_path.resolve() / "logs" / "transcribe_whisperx.log"
 
@@ -278,7 +278,7 @@ class TestMinionsConstants:
         monkeypatch.delenv("MINIONS_DB_USER", raising=False)
         import importlib
 
-        import src.config as cfg
+        import kct.config as cfg
         importlib.reload(cfg)
         assert cfg.MINIONS_DB_HOST == "localhost"
         assert cfg.MINIONS_DB_PORT == "5432"
@@ -293,7 +293,7 @@ class TestNaverMailConstants:
         monkeypatch.delenv("NAVER_MAIL_LIMIT", raising=False)
         import importlib
 
-        import src.config as cfg
+        import kct.config as cfg
         importlib.reload(cfg)
         assert cfg.NAVER_MAIL_HOST == "imap.naver.com"
         assert cfg.NAVER_MAIL_PORT == "993"
@@ -305,7 +305,7 @@ class TestCorrectionsConstants:
         monkeypatch.setenv("KCT_WORKSPACE", str(tmp_path))
         import importlib
 
-        import src.config as cfg
+        import kct.config as cfg
         importlib.reload(cfg)
         assert cfg.CORRECTIONS_RULES_PATH == tmp_path.resolve() / "state" / "correction_rules.json"
         assert cfg.CORRECTIONS_LOG_PATH == tmp_path.resolve() / "state" / "corrections.jsonl"

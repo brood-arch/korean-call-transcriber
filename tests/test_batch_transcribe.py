@@ -1,4 +1,4 @@
-"""Tests for src.transcribe.batch_transcribe — blacklist, pending selection, speaker mapping."""
+"""Tests for kct.transcribe.batch_transcribe — blacklist, pending selection, speaker mapping."""
 
 import json
 from pathlib import Path
@@ -20,29 +20,29 @@ def _write_audio(path: Path, size: int = 2048) -> None:
 # ---------------------------------------------------------------------------
 
 class TestBlacklist:
-    @patch("src.transcribe.batch_transcribe.BLACKLIST_FILE")
+    @patch("kct.transcribe.batch_transcribe.BLACKLIST_FILE")
     def test_load_empty_returns_default(self, mock_bl, tmp_path):
-        from src.transcribe.batch_transcribe import _load_blacklist
+        from kct.transcribe.batch_transcribe import _load_blacklist
         bl_file = tmp_path / "blacklist.json"
         mock_bl.__str__ = lambda s: str(bl_file)
         # BLACKLIST_FILE is a Path constant, patch it properly
-        with patch("src.transcribe.batch_transcribe.BLACKLIST_FILE", bl_file):
+        with patch("kct.transcribe.batch_transcribe.BLACKLIST_FILE", bl_file):
             result = _load_blacklist()
         assert isinstance(result, dict)
 
     def test_load_with_entries(self, tmp_path):
-        from src.transcribe.batch_transcribe import _load_blacklist
+        from kct.transcribe.batch_transcribe import _load_blacklist
         bl_file = tmp_path / "blacklist.json"
         _write_json(bl_file, {"bad_file1": {"failures": 3, "blacklisted_at": "2026-06-03T18:00:00"}})
-        with patch("src.transcribe.batch_transcribe.BLACKLIST_FILE", bl_file):
+        with patch("kct.transcribe.batch_transcribe.BLACKLIST_FILE", bl_file):
             result = _load_blacklist()
         assert "bad_file1" in result
 
     def test_is_blacklisted(self, tmp_path):
-        from src.transcribe.batch_transcribe import is_blacklisted
+        from kct.transcribe.batch_transcribe import is_blacklisted
         bl_file = tmp_path / "blacklist.json"
         _write_json(bl_file, {"noise_file": {"failures": 3, "blacklisted_at": "2026-06-03T18:00:00"}})
-        with patch("src.transcribe.batch_transcribe.BLACKLIST_FILE", bl_file):
+        with patch("kct.transcribe.batch_transcribe.BLACKLIST_FILE", bl_file):
             assert is_blacklisted("noise_file") is True
             assert is_blacklisted("clean_file") is False
 
@@ -65,10 +65,10 @@ class TestPendingSelection:
         bl_file = tmp_path / "blacklist.json"
         _write_json(bl_file, {})
 
-        from src.transcribe.batch_transcribe import get_pending
-        with patch("src.transcribe.batch_transcribe.SOURCE_DIR", audio_dir), \
-             patch("src.transcribe.batch_transcribe.OUTPUT_DIR", trans_dir), \
-             patch("src.transcribe.batch_transcribe.BLACKLIST_FILE", bl_file):
+        from kct.transcribe.batch_transcribe import get_pending
+        with patch("kct.transcribe.batch_transcribe.SOURCE_DIR", audio_dir), \
+             patch("kct.transcribe.batch_transcribe.OUTPUT_DIR", trans_dir), \
+             patch("kct.transcribe.batch_transcribe.BLACKLIST_FILE", bl_file):
             pending = get_pending()
 
         stems = [f.stem for f in pending]
@@ -87,10 +87,10 @@ class TestPendingSelection:
         bl_file = tmp_path / "blacklist.json"
         _write_json(bl_file, {"call_blocked": {"failures": 3, "blacklisted_at": "2026-06-03T18:00:00"}})
 
-        from src.transcribe.batch_transcribe import get_pending
-        with patch("src.transcribe.batch_transcribe.SOURCE_DIR", audio_dir), \
-             patch("src.transcribe.batch_transcribe.OUTPUT_DIR", trans_dir), \
-             patch("src.transcribe.batch_transcribe.BLACKLIST_FILE", bl_file):
+        from kct.transcribe.batch_transcribe import get_pending
+        with patch("kct.transcribe.batch_transcribe.SOURCE_DIR", audio_dir), \
+             patch("kct.transcribe.batch_transcribe.OUTPUT_DIR", trans_dir), \
+             patch("kct.transcribe.batch_transcribe.BLACKLIST_FILE", bl_file):
             pending = get_pending()
 
         stems = [f.stem for f in pending]
@@ -104,7 +104,7 @@ class TestPendingSelection:
 
 class TestSpeakerMapping:
     def test_basic_mapping(self):
-        from src.transcribe.batch_transcribe import map_speakers
+        from kct.transcribe.batch_transcribe import map_speakers
 
         segments = [
             {"start": 0.0, "end": 5.0, "text": "안녕하세요", "speaker": "SPEAKER_00"},
@@ -117,7 +117,7 @@ class TestSpeakerMapping:
         assert len(callers) >= 1
 
     def test_no_caller_info(self):
-        from src.transcribe.batch_transcribe import map_speakers
+        from kct.transcribe.batch_transcribe import map_speakers
 
         segments = [
             {"start": 0.0, "end": 5.0, "text": "대화 내용", "speaker": "SPEAKER_00"},
@@ -132,13 +132,13 @@ class TestSpeakerMapping:
 
 class TestParseCallerInfo:
     def test_parses_phone_number(self):
-        from src.transcribe.batch_transcribe import parse_caller_info
+        from kct.transcribe.batch_transcribe import parse_caller_info
         name, phone = parse_caller_info("통화_01012345678_20260603150000")
         assert phone is not None
         assert "010" in phone
 
     def test_no_match_returns_none(self):
-        from src.transcribe.batch_transcribe import parse_caller_info
+        from kct.transcribe.batch_transcribe import parse_caller_info
         name, phone = parse_caller_info("random_file_name")
         assert name is None
         assert phone is None

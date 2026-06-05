@@ -1,4 +1,4 @@
-"""Tests for src.extract.extract_all — pipeline orchestration (mocked API)."""
+"""Tests for kct.extract.extract_all — pipeline orchestration (mocked API)."""
 
 from pathlib import Path
 from unittest.mock import patch
@@ -33,7 +33,7 @@ def _make_args(tmp_path, **overrides):
 
 class TestFileSelection:
     def test_finds_txt_files(self, tmp_path):
-        from src.extract.extract_all import IntegratedPipeline
+        from kct.extract.extract_all import IntegratedPipeline
 
         trans_dir = tmp_path / "transcripts"
         _write_transcript(trans_dir / "call_20260603_150000.txt", "안녕하세요 오늘 회의 관련 통화입니다." * 10)
@@ -45,7 +45,7 @@ class TestFileSelection:
         assert len(files) == 2
 
     def test_skips_empty_files(self, tmp_path):
-        from src.extract.extract_all import IntegratedPipeline
+        from kct.extract.extract_all import IntegratedPipeline
 
         trans_dir = tmp_path / "transcripts"
         _write_transcript(trans_dir / "empty.txt", "")
@@ -59,8 +59,8 @@ class TestFileSelection:
         assert files[0].stem == "good"
 
     def test_skips_already_processed(self, tmp_path):
-        from src.extract.extract_all import IntegratedPipeline
-        from src.extract.state import compute_file_hash, save_processed_index
+        from kct.extract.extract_all import IntegratedPipeline
+        from kct.extract.state import compute_file_hash, save_processed_index
 
         trans_dir = tmp_path / "transcripts"
         _write_transcript(trans_dir / "call_20260603.txt", "이미 처리된 통화 내용입니다." * 10)
@@ -78,14 +78,14 @@ class TestFileSelection:
         assert len(files) == 0
 
     def test_today_mode_filters(self, tmp_path):
-        from src.extract.extract_all import IntegratedPipeline
+        from kct.extract.extract_all import IntegratedPipeline
 
         trans_dir = tmp_path / "transcripts"
         _write_transcript(trans_dir / "call_20260603_150000.txt", "오늘 통화" * 10)
         _write_transcript(trans_dir / "call_20260602_150000.txt", "어제 통화" * 10)
 
         args = _make_args(tmp_path, today=True)
-        with patch("src.extract.extract_all.datetime") as mock_dt:
+        with patch("kct.extract.extract_all.datetime") as mock_dt:
             from datetime import datetime as real_dt
             mock_dt.now.side_effect = lambda tz=None: real_dt(2026, 6, 3, 15, 0, 0)
             mock_dt.side_effect = lambda *a, **k: real_dt(*a, **k)
@@ -103,7 +103,7 @@ class TestFileSelection:
 class TestPipelineRun:
     def test_dry_run_finds_files_but_no_api(self, tmp_path):
         """Verify file selection works without calling the LLM API."""
-        from src.extract.extract_all import IntegratedPipeline
+        from kct.extract.extract_all import IntegratedPipeline
 
         trans_dir = tmp_path / "transcripts"
         _write_transcript(trans_dir / "call_001.txt", "테스트 통화 내용입니다." * 10)
@@ -114,9 +114,9 @@ class TestPipelineRun:
         files = pipe.get_transcription_files()
         assert len(files) == 2
 
-    @patch("src.extract.extract_all.call_llm_extract")
+    @patch("kct.extract.extract_all.call_llm_extract")
     def test_single_file_extraction(self, mock_llm, tmp_path):
-        from src.extract.extract_all import IntegratedPipeline
+        from kct.extract.extract_all import IntegratedPipeline
 
         mock_llm.return_value = {
             "summary": {"one_line": "테스트 통화 요약"},
@@ -137,15 +137,15 @@ class TestPipelineRun:
 
         # Mock fast_score to always process
         with patch(
-            "src.extract.extract_all._get_fast_score",
+            "kct.extract.extract_all._get_fast_score",
             return_value=lambda t: {
                 "should_process": True,
                 "score": 1.0,
                 "band": "definite_keep",
             },
         ):
-            with patch("src.extract.extract_all.setup_langfuse", return_value=None):
-                with patch("src.extract.extract_all.get_llm_config", return_value={"api_key": "test-key"}):
+            with patch("kct.extract.extract_all.setup_langfuse", return_value=None):
+                with patch("kct.extract.extract_all.get_llm_config", return_value={"api_key": "test-key"}):
                     pipe._lf_available = False
                     with pytest.raises(SystemExit) as exc:
                         pipe.run()
@@ -155,9 +155,9 @@ class TestPipelineRun:
         assert pipe.stats["summary"] == 1
         assert pipe.stats["todos"] == 1
 
-    @patch("src.extract.extract_all.call_llm_extract")
+    @patch("kct.extract.extract_all.call_llm_extract")
     def test_fallback_on_api_failure(self, mock_llm, tmp_path):
-        from src.extract.extract_all import IntegratedPipeline
+        from kct.extract.extract_all import IntegratedPipeline
 
         mock_llm.return_value = None  # API failure
 
@@ -167,9 +167,9 @@ class TestPipelineRun:
         args = _make_args(tmp_path, batch_size=1)
         pipe = IntegratedPipeline(args)
 
-        with patch("src.extract.extract_all._get_fast_score", return_value=lambda t: {"should_process": True}):
-            with patch("src.extract.extract_all.setup_langfuse", return_value=None):
-                with patch("src.extract.extract_all.get_llm_config", return_value={"api_key": "test-key"}):
+        with patch("kct.extract.extract_all._get_fast_score", return_value=lambda t: {"should_process": True}):
+            with patch("kct.extract.extract_all.setup_langfuse", return_value=None):
+                with patch("kct.extract.extract_all.get_llm_config", return_value={"api_key": "test-key"}):
                     pipe._lf_available = False
                     with pytest.raises(SystemExit) as exc:
                         pipe.run()
@@ -177,9 +177,9 @@ class TestPipelineRun:
 
         assert pipe.stats.get("fallbacks", 0) == 1
 
-    @patch("src.extract.extract_all.call_llm_extract")
+    @patch("kct.extract.extract_all.call_llm_extract")
     def test_fast_score_skip(self, mock_llm, tmp_path):
-        from src.extract.extract_all import IntegratedPipeline
+        from kct.extract.extract_all import IntegratedPipeline
 
         trans_dir = tmp_path / "transcripts"
         _write_transcript(trans_dir / "short_call.txt", "짧은 통화" * 10)
@@ -189,15 +189,15 @@ class TestPipelineRun:
 
         # fast_score says "skip"
         with patch(
-            "src.extract.extract_all._get_fast_score",
+            "kct.extract.extract_all._get_fast_score",
             return_value=lambda t: {
                 "should_process": False,
                 "score": 0.1,
                 "band": "definite_drop",
             },
         ):
-            with patch("src.extract.extract_all.setup_langfuse", return_value=None):
-                with patch("src.extract.extract_all.get_llm_config", return_value={"api_key": "test-key"}):
+            with patch("kct.extract.extract_all.setup_langfuse", return_value=None):
+                with patch("kct.extract.extract_all.get_llm_config", return_value={"api_key": "test-key"}):
                     pipe._lf_available = False
                     with pytest.raises(SystemExit) as exc:
                         pipe.run()

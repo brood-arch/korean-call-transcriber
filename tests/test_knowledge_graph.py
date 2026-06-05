@@ -1,4 +1,4 @@
-"""Tests for src.knowledge.graph — nodes, edges, traversal, persistence."""
+"""Tests for kct.knowledge.graph — nodes, edges, traversal, persistence."""
 
 import json
 
@@ -8,14 +8,14 @@ import pytest
 @pytest.fixture(autouse=True)
 def _isolate_state(tmp_path, monkeypatch):
     monkeypatch.setenv("KCT_STATE_DIR", str(tmp_path))
-    import src.knowledge.graph as g
+    import kct.knowledge.graph as g
     monkeypatch.setattr(g, "_STATE_DIR", tmp_path)
     monkeypatch.setattr(g, "GRAPH_FILE", tmp_path / "knowledge_graph.json")
 
 
 @pytest.fixture
 def graph(tmp_path):
-    from src.knowledge.graph import KnowledgeGraph
+    from kct.knowledge.graph import KnowledgeGraph
     return KnowledgeGraph(graph_path=tmp_path / "test_graph.json")
 
 
@@ -116,7 +116,7 @@ def test_get_related_nonexistent(graph):
 # ── Persistence ──────────────────────────────────────────────────────────
 
 def test_save_and_load(tmp_path):
-    from src.knowledge.graph import KnowledgeGraph
+    from kct.knowledge.graph import KnowledgeGraph
     gpath = tmp_path / "graph.json"
 
     g1 = KnowledgeGraph(graph_path=gpath)
@@ -132,7 +132,7 @@ def test_save_and_load(tmp_path):
 
 
 def test_load_nonexistent(tmp_path):
-    from src.knowledge.graph import KnowledgeGraph
+    from kct.knowledge.graph import KnowledgeGraph
     g = KnowledgeGraph(graph_path=tmp_path / "nonexistent.json")
     assert len(g.nodes) == 0
     assert len(g.edges) == 0
@@ -143,7 +143,7 @@ def test_load_nonexistent(tmp_path):
 def test_empty_graph_stats():
     import tempfile
 
-    from src.knowledge.graph import KnowledgeGraph
+    from kct.knowledge.graph import KnowledgeGraph
     with tempfile.TemporaryDirectory() as td:
         from pathlib import Path
         g = KnowledgeGraph(graph_path=Path(td) / "empty.json")
@@ -162,7 +162,7 @@ def test_node_type_counts(graph):
 # ── build_from_todos ────────────────────────────────────────────────────
 
 def test_build_from_todos(tmp_path):
-    from src.knowledge.graph import KnowledgeGraph, build_from_todos
+    from kct.knowledge.graph import KnowledgeGraph, build_from_todos
     todos_data = {
         "todos": {
             "key1": {

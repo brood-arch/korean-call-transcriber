@@ -1,4 +1,4 @@
-"""Tests for src.integrations.naver_mail — message parsing, header decode, state I/O."""
+"""Tests for kct.integrations.naver_mail — message parsing, header decode, state I/O."""
 
 from unittest.mock import MagicMock, patch
 
@@ -13,24 +13,24 @@ def _isolate_state(tmp_path, monkeypatch):
 # ── Header decoding ──────────────────────────────────────────────────────
 
 def test_decode_header_value_ascii():
-    from src.integrations.naver_mail import _decode_header_value
+    from kct.integrations.naver_mail import _decode_header_value
     assert _decode_header_value("Hello World") == "Hello World"
 
 
 def test_decode_header_value_korean_encoded():
-    from src.integrations.naver_mail import _decode_header_value
+    from kct.integrations.naver_mail import _decode_header_value
     result = _decode_header_value("=?utf-8?B?7YWM7Iqk7Yq4?=")
     assert result == "테스트"
 
 
 def test_decode_header_value_none():
-    from src.integrations.naver_mail import _decode_header_value
+    from kct.integrations.naver_mail import _decode_header_value
     assert _decode_header_value(None) == ""
     assert _decode_header_value("") == ""
 
 
 def test_decode_header_value_mixed():
-    from src.integrations.naver_mail import _decode_header_value
+    from kct.integrations.naver_mail import _decode_header_value
     result = _decode_header_value("Re: =?utf-8?B?7YWM7Iqk7Yq4?= =?utf-8?B?7JWI64WV?=")
     assert "테스트" in result
 
@@ -40,7 +40,7 @@ def test_decode_header_value_mixed():
 def test_extract_body_plain_text():
     import email as email_lib
 
-    from src.integrations.naver_mail import _extract_body
+    from kct.integrations.naver_mail import _extract_body
     msg = email_lib.message_from_string(
         "Content-Type: text/plain; charset=utf-8\r\n\r\nHello plain text"
     )
@@ -51,7 +51,7 @@ def test_extract_body_plain_text():
 def test_extract_body_html_fallback():
     import email as email_lib
 
-    from src.integrations.naver_mail import _extract_body
+    from kct.integrations.naver_mail import _extract_body
     raw = (
         "MIME-Version: 1.0\r\n"
         "Content-Type: multipart/alternative; boundary=bnd\r\n"
@@ -70,7 +70,7 @@ def test_extract_body_html_fallback():
 def test_extract_body_korean():
     from email.message import EmailMessage
 
-    from src.integrations.naver_mail import _extract_body
+    from kct.integrations.naver_mail import _extract_body
     msg = EmailMessage()
     msg.set_content("안녕하세요 반갑습니다", charset="utf-8")
     body = _extract_body(msg)
@@ -80,7 +80,7 @@ def test_extract_body_korean():
 # ── Message parsing ─────────────────────────────────────────────────────
 
 def test_parse_message_basic():
-    from src.integrations.naver_mail import parse_message
+    from kct.integrations.naver_mail import parse_message
     raw = (
         b"From: sender@example.com\r\n"
         b"To: receiver@naver.com\r\n"
@@ -101,7 +101,7 @@ def test_parse_message_basic():
 def test_parse_message_korean_subject():
     import email as email_lib
 
-    from src.integrations.naver_mail import parse_message
+    from kct.integrations.naver_mail import parse_message
     # Build message with Korean encoded subject
     msg = email_lib.message_from_string(
         "From: sender@example.com\r\n"
@@ -119,13 +119,13 @@ def test_parse_message_korean_subject():
 # ── State load/save ─────────────────────────────────────────────────────
 
 def test_load_state_empty(tmp_path):
-    from src.integrations.naver_mail import load_state
+    from kct.integrations.naver_mail import load_state
     state = load_state(tmp_path / "nonexistent")
     assert state == {}
 
 
 def test_save_and_load_state(tmp_path):
-    from src.integrations.naver_mail import load_state, save_state
+    from kct.integrations.naver_mail import load_state, save_state
     state_dir = tmp_path / "state"
     original = {"INBOX": ["1", "2", "3"]}
     save_state(state_dir, original)
@@ -134,7 +134,7 @@ def test_save_and_load_state(tmp_path):
 
 
 def test_save_state_creates_directory(tmp_path):
-    from src.integrations.naver_mail import save_state
+    from kct.integrations.naver_mail import save_state
     state_dir = tmp_path / "deep" / "nested" / "dir"
     save_state(state_dir, {"key": "val"})
     assert (state_dir / "processed_uids.json").exists()
@@ -143,7 +143,7 @@ def test_save_state_creates_directory(tmp_path):
 # ── Credentials check ───────────────────────────────────────────────────
 
 def test_credentials_missing_raises(monkeypatch):
-    import src.integrations.naver_mail as nm
+    import kct.integrations.naver_mail as nm
     monkeypatch.setattr(nm, "NAVER_MAIL_ADDRESS", "")
     monkeypatch.setattr(nm, "NAVER_MAIL_PASSWORD", "")
     with pytest.raises(EnvironmentError):
@@ -151,7 +151,7 @@ def test_credentials_missing_raises(monkeypatch):
 
 
 def test_credentials_present(monkeypatch):
-    import src.integrations.naver_mail as nm
+    import kct.integrations.naver_mail as nm
     monkeypatch.setattr(nm, "NAVER_MAIL_ADDRESS", "user@naver.com")
     monkeypatch.setattr(nm, "NAVER_MAIL_PASSWORD", "secretpass")
     addr, pw = nm._get_credentials()
@@ -163,7 +163,7 @@ def test_credentials_present(monkeypatch):
 
 def test_fetch_messages_mocked(tmp_path, monkeypatch):
     """Test fetch_messages with mocked IMAP connection."""
-    from src.integrations.naver_mail import fetch_messages
+    from kct.integrations.naver_mail import fetch_messages
 
     mock_imap = MagicMock()
     mock_imap.__enter__ = MagicMock(return_value=mock_imap)
@@ -175,7 +175,7 @@ def test_fetch_messages_mocked(tmp_path, monkeypatch):
         ("OK", [(b"2", b"Subject: Test2\r\nFrom: c@d.com\r\n\r\nBody2")]),  # FETCH 2
     ]
 
-    with patch("src.integrations.naver_mail.imaplib.IMAP4_SSL", return_value=mock_imap):
+    with patch("kct.integrations.naver_mail.imaplib.IMAP4_SSL", return_value=mock_imap):
         state = {}
         results = fetch_messages(
             account="user@naver.com",

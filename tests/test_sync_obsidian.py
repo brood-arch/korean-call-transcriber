@@ -1,5 +1,5 @@
 def test_sync_obsidian_dry_run_does_not_write(tmp_path, monkeypatch, caplog):
-    from src.sync import sync_obsidian
+    from kct.sync import sync_obsidian
 
     source = tmp_path / "transcripts"
     vault = tmp_path / "vault"
@@ -16,7 +16,7 @@ def test_sync_obsidian_dry_run_does_not_write(tmp_path, monkeypatch, caplog):
     monkeypatch.setattr("sys.argv", ["sync_obsidian", "--dry-run"])
 
     import logging
-    with caplog.at_level(logging.INFO, logger="src.sync.sync_obsidian"):
+    with caplog.at_level(logging.INFO, logger="kct.sync.sync_obsidian"):
         sync_obsidian.main()
 
     assert any("처리 완료: 1개" in r.message for r in caplog.records)
@@ -25,7 +25,7 @@ def test_sync_obsidian_dry_run_does_not_write(tmp_path, monkeypatch, caplog):
 
 
 def test_update_counterparty_file_creates_and_appends(tmp_path, monkeypatch):
-    from src.sync import sync_obsidian
+    from kct.sync import sync_obsidian
 
     contacts = tmp_path / "contacts"
     monkeypatch.setattr(sync_obsidian, "COUNTERPARTY_DIR", contacts)
@@ -39,7 +39,7 @@ def test_update_counterparty_file_creates_and_appends(tmp_path, monkeypatch):
 
 
 def test_update_counterparty_index_adds_new_entries(tmp_path, monkeypatch):
-    from src.sync import sync_obsidian
+    from kct.sync import sync_obsidian
 
     index = tmp_path / "contact_index.md"
     index.write_text("# Contacts\n", encoding="utf-8")
@@ -53,7 +53,7 @@ def test_update_counterparty_index_adds_new_entries(tmp_path, monkeypatch):
 
 
 def test_load_state_handles_bad_json(tmp_path, monkeypatch):
-    from src.sync import sync_obsidian
+    from kct.sync import sync_obsidian
 
     state = tmp_path / "state.json"
     state.write_text("{bad", encoding="utf-8")
@@ -63,6 +63,6 @@ def test_load_state_handles_bad_json(tmp_path, monkeypatch):
 
 
 def test_parse_filename_rejects_invalid_name():
-    from src.sync.sync_obsidian import parse_filename
+    from kct.sync.sync_obsidian import parse_filename
 
     assert parse_filename("bad.txt") is None

@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 
 def test_health_ignores_timestamp_suffixed_recheck_transcripts(tmp_path, monkeypatch):
-    from src.pipeline import health_check as pipeline_health_check
+    from kct.pipeline import health_check as pipeline_health_check
 
     audio_dir = tmp_path / "audio"
     transcript_dir = tmp_path / "transcripts"

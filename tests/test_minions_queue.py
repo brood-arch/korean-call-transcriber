@@ -1,4 +1,4 @@
-"""Tests for src.pipeline.minions_queue — job submission, lifecycle, stats (mocked DB)."""
+"""Tests for kct.pipeline.minions_queue — job submission, lifecycle, stats (mocked DB)."""
 
 import json
 import sys
@@ -27,7 +27,7 @@ def _mock_psycopg2(monkeypatch):
     monkeypatch.setitem(__import__("sys").modules, "psycopg2.extras", mock_extras)
 
     # Also patch the module-level reference in minions_queue
-    import src.pipeline.minions_queue as mq
+    import kct.pipeline.minions_queue as mq
     monkeypatch.setattr(mq, "psycopg2", mock_psycopg2)
 
     return mock_psycopg2
@@ -40,7 +40,7 @@ def _mock_db_pass(monkeypatch):
 
 def _make_queue(mock_psycopg2):
     """Create a MinionsQueue with mocked connection."""
-    from src.pipeline.minions_queue import MinionsQueue
+    from kct.pipeline.minions_queue import MinionsQueue
 
     mock_conn = MagicMock()
     mock_psycopg2.connect.return_value = mock_conn
@@ -221,8 +221,8 @@ def test_execute_shell_cmd(_mock_psycopg2, monkeypatch):
         "timeout_ms": 5000,
     }
     completed = MagicMock(returncode=0, stdout="hello\n", stderr="")
-    with patch("src.pipeline.minions_queue.subprocess.run", return_value=completed):
-        with patch("src.pipeline.minions_queue._shell_jobs_enabled", return_value=True):
+    with patch("kct.pipeline.minions_queue.subprocess.run", return_value=completed):
+        with patch("kct.pipeline.minions_queue._shell_jobs_enabled", return_value=True):
             result = mq.execute_shell(job)
 
     assert result["exit_code"] == 0
@@ -411,7 +411,7 @@ def test_replay_nonexistent(_mock_psycopg2):
 # ── DB config ───────────────────────────────────────────────────────────
 
 def test_db_config_from_env(monkeypatch):
-    import src.pipeline.minions_queue as mq
+    import kct.pipeline.minions_queue as mq
     monkeypatch.setattr(mq, "MINIONS_DB_HOST", "myhost")
     monkeypatch.setattr(mq, "MINIONS_DB_PORT", "5433")
     monkeypatch.setattr(mq, "MINIONS_DB_NAME", "mydb")
@@ -426,7 +426,7 @@ def test_db_config_from_env(monkeypatch):
 
 
 def test_db_config_missing_password(monkeypatch):
-    from src.pipeline.minions_queue import _db_config
+    from kct.pipeline.minions_queue import _db_config
     monkeypatch.delenv("MINIONS_DB_PASS", raising=False)
     with pytest.raises(EnvironmentError):
         _db_config()

@@ -1,4 +1,4 @@
-"""Tests for src.knowledge.signal_detector — 3-band fast scoring, signal extraction."""
+"""Tests for kct.knowledge.signal_detector — 3-band fast scoring, signal extraction."""
 
 from unittest.mock import patch
 
@@ -9,7 +9,7 @@ import pytest
 def _isolate_state(tmp_path, monkeypatch):
     """Redirect state dir so event writes go to tmp_path."""
     monkeypatch.setenv("KCT_STATE_DIR", str(tmp_path))
-    import src.knowledge.signal_detector as sd
+    import kct.knowledge.signal_detector as sd
     monkeypatch.setattr(sd, "_STATE_DIR", tmp_path)
     monkeypatch.setattr(sd, "EVENTS_PATH", tmp_path / "events.jsonl")
 
@@ -18,7 +18,7 @@ def _isolate_state(tmp_path, monkeypatch):
 
 def test_fast_score_definite_keep():
     """Long text with many business keywords + interaction markers + entities → definite_keep."""
-    from src.knowledge.signal_detector import fast_score_transcript
+    from kct.knowledge.signal_detector import fast_score_transcript
     text = (
         "주문 500개 견적 확인 부탁드려요. "
         "납기 언제인가요? 결제는 입금 완료했습니다. "
@@ -39,7 +39,7 @@ def test_fast_score_definite_keep():
 
 def test_fast_score_definite_drop():
     """Very short, no keywords, no entities → definite_drop."""
-    from src.knowledge.signal_detector import fast_score_transcript
+    from kct.knowledge.signal_detector import fast_score_transcript
     result = fast_score_transcript("ok")
     assert result["band"] == "definite_drop"
     assert result["score"] <= 0.15
@@ -49,7 +49,7 @@ def test_fast_score_definite_drop():
 
 def test_fast_score_borderline():
     """Medium-length text with some substance → borderline."""
-    from src.knowledge.signal_detector import fast_score_transcript
+    from kct.knowledge.signal_detector import fast_score_transcript
     text = "오늘 회의에서 논의한 내용 정리"
     result = fast_score_transcript(text)
     assert result["band"] in ("borderline", "definite_keep", "definite_drop")
@@ -59,7 +59,7 @@ def test_fast_score_borderline():
 
 def test_fast_score_signals_structure():
     """All 5 signals present in output."""
-    from src.knowledge.signal_detector import fast_score_transcript
+    from kct.knowledge.signal_detector import fast_score_transcript
     result = fast_score_transcript("테스트")
     signals = result["signals"]
     assert set(signals.keys()) == {
@@ -69,7 +69,7 @@ def test_fast_score_signals_structure():
 
 
 def test_fast_score_empty_text():
-    from src.knowledge.signal_detector import fast_score_transcript
+    from kct.knowledge.signal_detector import fast_score_transcript
     result = fast_score_transcript("")
     assert result["band"] == "definite_drop"
     assert result["should_process"] is False
@@ -79,7 +79,7 @@ def test_fast_score_empty_text():
 
 def test_detect_signals_with_entities():
     """Text with product names should detect entities."""
-    from src.knowledge.signal_detector import detect_signals
+    from kct.knowledge.signal_detector import detect_signals
     result = detect_signals("송풍기 주문 500개 확인해주세요")
     assert len(result["entities"]) >= 1
     # Should find 송풍기 as a product entity
@@ -89,7 +89,7 @@ def test_detect_signals_with_entities():
 
 def test_detect_signals_idea_pattern():
     """Text with idea pattern should detect idea."""
-    from src.knowledge.signal_detector import detect_signals
+    from kct.knowledge.signal_detector import detect_signals
     text = "아이디어인데: 새로운 접근 방법으로 비용 절감 가능"
     result = detect_signals(text)
     assert len(result["ideas"]) >= 1
@@ -97,14 +97,14 @@ def test_detect_signals_idea_pattern():
 
 def test_detect_signals_operational_short():
     """Short operational messages are skipped."""
-    from src.knowledge.signal_detector import detect_signals
+    from kct.knowledge.signal_detector import detect_signals
     result = detect_signals("네")
     assert result["is_operational"] is True
 
 
 def test_detect_signals_operational_keywords():
     """Known operational keywords marked as operational."""
-    from src.knowledge.signal_detector import detect_signals
+    from kct.knowledge.signal_detector import detect_signals
     for text in ("ok", "yes", "고마워", "알겠어"):
         result = detect_signals(text)
         assert result["is_operational"] is True, f"'{text}' should be operational"
@@ -112,14 +112,14 @@ def test_detect_signals_operational_keywords():
 
 def test_detect_signals_non_operational():
     """Business message should not be operational."""
-    from src.knowledge.signal_detector import detect_signals
+    from kct.knowledge.signal_detector import detect_signals
     text = "주문 500개 송풍기 발송 확인 부탁드립니다. 연락 주세요."
     result = detect_signals(text)
     assert result["is_operational"] is False
 
 
 def test_detect_signals_summary_present():
-    from src.knowledge.signal_detector import detect_signals
+    from kct.knowledge.signal_detector import detect_signals
     result = detect_signals("테스트 메시지")
     assert "summary" in result
     assert "fast_score" in result["summary"]
@@ -127,7 +127,7 @@ def test_detect_signals_summary_present():
 
 def test_detect_signals_event_not_recorded_for_operational(tmp_path):
     """Operational messages should not append events."""
-    from src.knowledge.signal_detector import detect_signals
+    from kct.knowledge.signal_detector import detect_signals
     events_path = tmp_path / "events.jsonl"
     detect_signals("ok")
     if events_path.exists():
@@ -139,7 +139,7 @@ def test_detect_signals_event_not_recorded_for_operational(tmp_path):
 
 def test_no_llm_api_calls():
     """Ensure fast_score_transcript never calls an external API."""
-    from src.knowledge.signal_detector import fast_score_transcript
+    from kct.knowledge.signal_detector import fast_score_transcript
     with patch("urllib.request.urlopen") as mock_urlopen:
         fast_score_transcript("주문 확인 견적 발송")
         mock_urlopen.assert_not_called()

@@ -1,8 +1,8 @@
-"""Tests for src.extract.client — LLM client, JSON extraction, retry policy."""
+"""Tests for kct.extract.client — LLM client, JSON extraction, retry policy."""
 
 import json
 
-from src.extract.client import _extract_json_from_text
+from kct.extract.client import _extract_json_from_text
 
 
 class TestExtractJsonFromText:
