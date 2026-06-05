@@ -111,11 +111,19 @@ class MinionsQueue:
 
     def _test_connection(self) -> None:
         """Verify database connectivity."""
-        conn = psycopg2.connect(self.db_config["dsn"]) if "dsn" in self.db_config else psycopg2.connect(**self.db_config)
+        conn = (
+            psycopg2.connect(self.db_config["dsn"])
+            if "dsn" in self.db_config
+            else psycopg2.connect(**self.db_config)
+        )
         conn.close()
 
     def _conn(self):
-        return psycopg2.connect(self.db_config["dsn"]) if "dsn" in self.db_config else psycopg2.connect(**self.db_config)
+        return (
+            psycopg2.connect(self.db_config["dsn"])
+            if "dsn" in self.db_config
+            else psycopg2.connect(**self.db_config)
+        )
 
     # ── Submit ──────────────────────────────────────────
 
@@ -151,7 +159,10 @@ class MinionsQueue:
             Job ID (int).
         """
         if name == "shell" and not _shell_jobs_enabled():
-            raise RuntimeError("Shell jobs are disabled by default. Set KCT_ENABLE_SHELL_JOBS=1 for trusted local automation.")
+            raise RuntimeError(
+                "Shell jobs are disabled by default."
+                " Set KCT_ENABLE_SHELL_JOBS=1 for trusted local automation."
+            )
         conn = self._conn()
         try:
             cur = conn.cursor()
@@ -634,6 +645,71 @@ class MinionsQueue:
 
     # ── Worker Loop ─────────────────────────────────────
 
+    def _execute_job(self, job: dict) -> bool:
+        """Execute a single claimed job.  Returns *True* when fanout_parent
+        wants the caller to ``continue`` (skip the parent-check tail).
+        """
+        job_id = job["id"]
+        job_name = job["name"]
+        log.info(f"[{job_id}] Running: {job_name}")
+
+        if job_name == "shell":
+            self._run_shell_job(job_id, job)
+        elif job_name in ("aggregator", "subagent_aggregator"):
+            self._run_aggregator_job(job_id, job)
+        elif job_name == "fanout_parent":
+            self._run_fanout_parent(job_id)
+            return True  # caller must continue, skip parent-check
+        else:
+            self._run_shell_job(job_id, job)
+
+        # Check parent after child completion
+        parent_id = job.get("parent_id")
+        if parent_id:
+            children = self.check_children_complete(parent_id)
+            if children["all_complete"]:
+                self.activate_aggregator(parent_id)
+        return False
+
+    def _run_shell_job(self, job_id: int, job: dict) -> None:
+        """Run a shell (or fallback) job and mark success / failure."""
+        result = self.execute_shell(job)
+        if result.get("exit_code", -1) == 0:
+            self.complete(job_id, result)
+            log.info(f"[{job_id}] Completed")
+        else:
+            status = self.fail(job_id, result.get("error", "Unknown"))
+            log.error(f"[{job_id}] {'Will retry' if status == 'pending' else 'Failed permanently'}")
+
+    def _run_aggregator_job(self, job_id: int, job: dict) -> None:
+        """Run an aggregator job."""
+        parent_id = job.get("parent_id")
+        if parent_id:
+            children = self.check_children_complete(parent_id)
+            self.complete(job_id, children)
+            log.info(f"[{job_id}] Aggregated {children['completed']}/{children['total']}")
+        else:
+            self.complete(job_id, {"note": "No parent, standalone"})
+
+    def _run_fanout_parent(self, job_id: int) -> None:
+        """Check fanout children; re-queue parent if not all complete."""
+        children = self.check_children_complete(job_id)
+        if children["all_complete"]:
+            self.activate_aggregator(job_id)
+            self.complete(job_id, children)
+            log.info(f"[{job_id}] All children done")
+        else:
+            conn = self._conn()
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    "UPDATE jobs SET status = 'pending', attempts = attempts - 1 WHERE id = %s",
+                    (job_id,),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
     def work_loop(self, queue: str = "default", interval: float = 5.0, once: bool = False) -> None:
         """Main worker loop: claim and execute pending jobs.
 
@@ -642,70 +718,16 @@ class MinionsQueue:
             interval: Seconds between polls when no job is available.
             once: Run one iteration and exit.
         """
-        print(f"Minions worker started (queue={queue}, interval={interval}s)")
+        log.info(f"Minions worker started (queue={queue}, interval={interval}s)")
 
         while True:
             job = self.claim_next(queue)
             if job:
-                job_id = job["id"]
-                job_name = job["name"]
-                print(f"[{job_id}] Running: {job_name}")
-
-                if job_name == "shell":
-                    result = self.execute_shell(job)
-                    if result.get("exit_code", -1) == 0:
-                        self.complete(job_id, result)
-                        log.info(f"[{job_id}] Completed")
-                    else:
-                        status = self.fail(job_id, result.get("error", "Unknown"))
-                        log.error(f"[{job_id}] {'Will retry' if status == 'pending' else 'Failed permanently'}")
-
-                elif job_name in ("aggregator", "subagent_aggregator"):
-                    parent_id = job.get("parent_id")
-                    if parent_id:
-                        children = self.check_children_complete(parent_id)
-                        self.complete(job_id, children)
-                        print(f"[{job_id}] Aggregated {children['completed']}/{children['total']}")
-                    else:
-                        self.complete(job_id, {"note": "No parent, standalone"})
-
-                elif job_name == "fanout_parent":
-                    children = self.check_children_complete(job_id)
-                    if children["all_complete"]:
-                        self.activate_aggregator(job_id)
-                        self.complete(job_id, children)
-                        print(f"[{job_id}] All children done")
-                    else:
-                        conn = self._conn()
-                        try:
-                            cur = conn.cursor()
-                            cur.execute(
-                                "UPDATE jobs SET status = 'pending', attempts = attempts - 1 WHERE id = %s",
-                                (job_id,),
-                            )
-                            conn.commit()
-                        finally:
-                            conn.close()
+                skip_sleep = self._execute_job(job)
+                if skip_sleep:
                     if once:
                         break
                     continue
-
-                else:
-                    # Custom job types fall back to shell execution
-                    result = self.execute_shell(job)
-                    if result.get("exit_code", -1) == 0:
-                        self.complete(job_id, result)
-                        log.info(f"[{job_id}] Completed")
-                    else:
-                        status = self.fail(job_id, result.get("error", "Unknown"))
-                        log.error(f"[{job_id}] {'Will retry' if status == 'pending' else 'Failed permanently'}")
-
-                # Check parent after child completion
-                parent_id = job.get("parent_id")
-                if parent_id:
-                    children = self.check_children_complete(parent_id)
-                    if children["all_complete"]:
-                        self.activate_aggregator(parent_id)
 
             if once:
                 break
@@ -747,6 +769,92 @@ class MinionsQueue:
 
 # ── CLI ─────────────────────────────────────────────────────────────────
 
+def _run_command(mq: MinionsQueue, cmd: str, argv: list[str]) -> None:
+    """Dispatch a single CLI command."""
+    handlers = {
+        "submit": lambda: _cmd_submit(mq, argv),
+        "list": lambda: _cmd_list(mq, argv),
+        "get": lambda: _cmd_get(mq, argv),
+        "cancel": lambda: _cmd_cancel(mq, argv),
+        "stats": lambda: _cmd_stats(mq),
+        "work": lambda: _cmd_work(mq, argv),
+        "cleanup": lambda: _cmd_cleanup(mq, argv),
+        "fanout": lambda: _cmd_fanout(mq, argv),
+        "children": lambda: _cmd_children(mq, argv),
+    }
+    handler = handlers.get(cmd)
+    if handler:
+        handler()
+    else:
+        log.info(f"Unknown command: {cmd}")
+
+
+def _cmd_submit(mq, argv):
+    if len(argv) <= 3:
+        return
+    name = argv[2]
+    payload = json.loads(argv[3])
+    job_id = mq.submit(name, payload)
+    log.info(f"Job #{job_id} submitted")
+
+
+def _cmd_list(mq, argv):
+    status = argv[2] if len(argv) > 2 else None
+    jobs = mq.list_jobs(status=status)
+    for j in jobs:
+        log.info(f"  #{j['id']} {j['name']} [{j['status']}] pri={j['priority']} created={j['created_at']}")
+
+
+def _cmd_get(mq, argv):
+    if len(argv) <= 2:
+        return
+    job = mq.get_job(int(argv[2]))
+    log.info(json.dumps(dict(job) if job else {}, ensure_ascii=False, indent=2, default=str))
+
+
+def _cmd_cancel(mq, argv):
+    if len(argv) <= 2:
+        return
+    ok = mq.cancel(int(argv[2]))
+    log.info(f"{'Cancelled' if ok else 'Not found or not cancellable'}")
+
+
+def _cmd_stats(mq):
+    s = mq.stats()
+    log.info(json.dumps(s, ensure_ascii=False, indent=2))
+
+
+def _cmd_work(mq, argv):
+    queue = argv[2] if len(argv) > 2 else "default"
+    mq.work_loop(queue=queue)
+
+
+def _cmd_cleanup(mq, argv):
+    days = int(argv[2]) if len(argv) > 2 else 30
+    deleted = mq.cleanup(days)
+    log.info(f"Cleaned up {deleted} old jobs")
+
+
+def _cmd_fanout(mq, argv):
+    if len(argv) <= 2:
+        return
+    children = json.loads(argv[2])
+    aggregator = json.loads(argv[3]) if len(argv) > 3 else None
+    result = mq.submit_fanout(children, aggregator)
+    log.info(
+        f"Fan-out: parent=#{result['parent_id']} "
+        f"children={[f'#{c}' for c in result['children']]} "
+        f"agg=#{result.get('aggregator_id')}"
+    )
+
+
+def _cmd_children(mq, argv):
+    if len(argv) <= 2:
+        return
+    children = mq.check_children_complete(int(argv[2]))
+    log.info(json.dumps(children, ensure_ascii=False, indent=2, default=str))
+
+
 def main() -> None:
     """Command-line interface for the job queue."""
     if psycopg2 is None:
@@ -756,69 +864,19 @@ def main() -> None:
     mq = MinionsQueue()
 
     if len(sys.argv) < 2:
-        print("Usage: minions_queue.py <command> [args]")
-        print("  submit <name> <json_payload>   - Submit a job")
-        print("  list [status]                  - List jobs")
-        print("  get <job_id>                   - Get job details")
-        print("  cancel <job_id>                - Cancel a job")
-        print("  stats                          - Queue statistics")
-        print("  work [queue]                   - Start worker")
-        print("  cleanup [days]                 - Clean old jobs")
-        print("  fanout <children_json> [agg]   - Fan-out parallel execution")
-        print("  children <parent_id>           - Check child status")
+        log.info("Usage: minions_queue.py <command> [args]")
+        log.info("  submit <name> <json_payload>   - Submit a job")
+        log.info("  list [status]                  - List jobs")
+        log.info("  get <job_id>                   - Get job details")
+        log.info("  cancel <job_id>                - Cancel a job")
+        log.info("  stats                          - Queue statistics")
+        log.info("  work [queue]                   - Start worker")
+        log.info("  cleanup [days]                 - Clean old jobs")
+        log.info("  fanout <children_json> [agg]   - Fan-out parallel execution")
+        log.info("  children <parent_id>           - Check child status")
         return
 
-    cmd = sys.argv[1]
-
-    if cmd == "submit" and len(sys.argv) > 3:
-        name = sys.argv[2]
-        payload = json.loads(sys.argv[3])
-        job_id = mq.submit(name, payload)
-        print(f"Job #{job_id} submitted")
-
-    elif cmd == "list":
-        status = sys.argv[2] if len(sys.argv) > 2 else None
-        jobs = mq.list_jobs(status=status)
-        for j in jobs:
-            print(f"  #{j['id']} {j['name']} [{j['status']}] pri={j['priority']} created={j['created_at']}")
-
-    elif cmd == "get" and len(sys.argv) > 2:
-        job = mq.get_job(int(sys.argv[2]))
-        print(json.dumps(dict(job) if job else {}, ensure_ascii=False, indent=2, default=str))
-
-    elif cmd == "cancel" and len(sys.argv) > 2:
-        ok = mq.cancel(int(sys.argv[2]))
-        print(f"{'Cancelled' if ok else 'Not found or not cancellable'}")
-
-    elif cmd == "stats":
-        s = mq.stats()
-        print(json.dumps(s, ensure_ascii=False, indent=2))
-
-    elif cmd == "work":
-        queue = sys.argv[2] if len(sys.argv) > 2 else "default"
-        mq.work_loop(queue=queue)
-
-    elif cmd == "cleanup":
-        days = int(sys.argv[2]) if len(sys.argv) > 2 else 30
-        deleted = mq.cleanup(days)
-        print(f"Cleaned up {deleted} old jobs")
-
-    elif cmd == "fanout" and len(sys.argv) > 2:
-        children = json.loads(sys.argv[2])
-        aggregator = json.loads(sys.argv[3]) if len(sys.argv) > 3 else None
-        result = mq.submit_fanout(children, aggregator)
-        print(
-            f"Fan-out: parent=#{result['parent_id']} "
-            f"children={[f'#{c}' for c in result['children']]} "
-            f"agg=#{result.get('aggregator_id')}"
-        )
-
-    elif cmd == "children" and len(sys.argv) > 2:
-        children = mq.check_children_complete(int(sys.argv[2]))
-        print(json.dumps(children, ensure_ascii=False, indent=2, default=str))
-
-    else:
-        print(f"Unknown command: {cmd}")
+    _run_command(mq, sys.argv[1], sys.argv)
 
 
 if __name__ == "__main__":

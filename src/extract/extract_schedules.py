@@ -28,12 +28,14 @@ KST = timezone(timedelta(hours=9))
 STATE_PATH = STATE_DIR
 OUTPUT_FILE = STATE_PATH / "extracted_schedules.json"
 
-SCHEDULE_PROMPT = """Extract appointments, deadlines, and todos from this call transcription.
+SCHEDULE_PROMPT = """\
+Extract appointments, deadlines, and todos from this call transcription.
 
 Output format (strict JSON):
 {{
   "appointments": [
-    {{"date": "YYYY-MM-DD", "time": "HH:MM or null", "title": "Title", "description": "Description", "people": ["Person"], "location": "Location or null"}}
+    {{"date": "YYYY-MM-DD", "time": "HH:MM or null", "title": "Title",
+     "description": "Description", "people": ["Person"], "location": "Location or null"}}
   ],
   "todos": [
     {{"title": "Task", "priority": "high/medium/low", "deadline": "YYYY-MM-DD or null", "context": "Context"}}
@@ -195,6 +197,17 @@ def deduplicate(items: list, key_fn) -> list:
     return unique
 
 
+def _append_schedule_results(result, meta, name, all_appointments, all_todos):
+    """Append appointments and todos from LLM result with source metadata."""
+    for apt in result.get("appointments", []):
+        apt["source"] = name
+        apt["counterparty"] = meta["counterparty"]
+    for todo in result.get("todos", []):
+        todo["source"] = name
+    all_appointments.extend(result.get("appointments", []))
+    all_todos.extend(result.get("todos", []))
+
+
 def main():
     parser = argparse.ArgumentParser(description="Schedule Extractor")
     parser.add_argument("--days", type=int, default=7)
@@ -214,11 +227,11 @@ def main():
                 transcripts.append(r)
 
     if not transcripts:
-        print("No relevant transcripts found")
+        log.info("No relevant transcripts found")
         return
 
     if args.dry_run:
-        print(f"Found {len(transcripts)} transcripts (dry run)")
+        log.info(f"Found {len(transcripts)} transcripts (dry run)")
         return
 
     all_appointments = []
@@ -231,22 +244,18 @@ def main():
 
         result = call_llm(content)
         meta = parse_transcript_name(transcript["name"])
-        for apt in result.get("appointments", []):
-            apt["source"] = transcript["name"]
-            apt["counterparty"] = meta["counterparty"]
-        for todo in result.get("todos", []):
-            todo["source"] = transcript["name"]
-
-        all_appointments.extend(result.get("appointments", []))
-        all_todos.extend(result.get("todos", []))
+        _append_schedule_results(result, meta, transcript["name"], all_appointments, all_todos)
 
         if i < len(transcripts) - 1:
             time.sleep(2)
 
-    all_appointments = deduplicate(all_appointments, lambda a: f"{a.get('title','')}|{a.get('date','')}|{a.get('time','')}")
+    all_appointments = deduplicate(
+        all_appointments,
+        lambda a: f"{a.get('title','')}|{a.get('date','')}|{a.get('time','')}"
+    )
     all_todos = deduplicate(all_todos, lambda t: t.get("title", "").strip())
 
-    print(f"\nExtracted: {len(all_appointments)} appointments, {len(all_todos)} todos")
+    log.info(f"\nExtracted: {len(all_appointments)} appointments, {len(all_todos)} todos")
 
     STATE_PATH.mkdir(parents=True, exist_ok=True)
     output = {
@@ -255,7 +264,7 @@ def main():
         "todos": all_todos,
     }
     safe_write_text(OUTPUT_FILE, json.dumps(output, ensure_ascii=False, indent=2))
-    print(f"Saved to {OUTPUT_FILE}")
+    log.info(f"Saved to {OUTPUT_FILE}")
 
 
 if __name__ == "__main__":

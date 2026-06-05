@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Retry queue generator and worker for transcription pipeline recovery.
 
 This module converts ``transcription_gap_analyzer.py`` JSON reports into an
@@ -186,7 +186,14 @@ def merge_queues(existing: list[dict[str, Any]], generated: list[dict[str, Any]]
             continue
         if old:
             # Preserve retry state while refreshing paths/reason metadata from latest analysis.
-            preserved = {k: old.get(k) for k in ("created_at", "status", "attempts", "last_error", "next_retry_at", "terminal_failure", "history")}
+            preserved = {
+                k: old.get(k)
+                for k in (
+                    "created_at", "status", "attempts",
+                    "last_error", "next_retry_at",
+                    "terminal_failure", "history",
+                )
+            }
             old.update(new)
             old.update({k: v for k, v in preserved.items() if v is not None or k in {"last_error", "next_retry_at"}})
             old["updated_at"] = now
@@ -231,40 +238,48 @@ def _wsl_to_win_path(wsl_path: str) -> str:
     return wsl_path
 
 
+def _cmd_transcribe(entry, win_py, win_source_path, running_on_wsl):
+    """Build command for transcribe action."""
+    cmd = "/mnt/c/Windows/System32/cmd.exe"
+    if running_on_wsl:
+        argv = [cmd, "/c", f"{win_py} -m src.transcribe.batch_transcribe --file \"{win_source_path}\""]
+    else:
+        argv = [win_py, "-m", "src.transcribe.batch_transcribe", "--file", win_source_path]
+    if entry.get("reason") == "transcription_failed":
+        argv.append("--force")
+    return argv
+
+
+def _cmd_diarize(entry, win_py, win_source_path, running_on_wsl):
+    """Build command for diarize action."""
+    cmd = "/mnt/c/Windows/System32/cmd.exe"
+    if running_on_wsl:
+        return [cmd, "/c", f"{win_py} -m src.transcribe.batch_transcribe --file \"{win_source_path}\" --force"]
+    return [win_py, "-m", "src.transcribe.batch_transcribe", "--file", win_source_path, "--force"]
+
+
 def command_for_entry(entry: dict[str, Any], workspace: Path, running_on_wsl: bool | None = None) -> list[str]:
     action = str(entry.get("next_action"))
     source_path = entry.get("source_path")
-
     win_py = os.environ.get("KCT_WINDOWS_PYTHON", sys.executable)
-    cmd = "/mnt/c/Windows/System32/cmd.exe"
-
-    # Convert WSL paths to Windows paths so cmd.exe / Windows Python can handle them
     win_source_path = _wsl_to_win_path(str(source_path)) if source_path else ""
-
-    # Detect whether we are running under WSL or native Windows.
     if running_on_wsl is None:
         running_on_wsl = is_wsl()
 
     if action == "transcribe":
         if not source_path:
             raise QueueError(f"{entry.get('queue_id')}: missing source_path for transcribe")
-        if running_on_wsl:
-            argv = [cmd, "/c", f"{win_py} -m src.transcribe.batch_transcribe --file \"{win_source_path}\""]
-        else:
-            argv = [win_py, "-m", "src.transcribe.batch_transcribe", "--file", win_source_path]
-        if entry.get("reason") == "transcription_failed":
-            argv.append("--force")
-        return argv
+        return _cmd_transcribe(entry, win_py, win_source_path, running_on_wsl)
     if action == "diarize":
         if not source_path:
             raise QueueError(f"{entry.get('queue_id')}: missing source_path for diarize")
-        if running_on_wsl:
-            argv = [cmd, "/c", f"{win_py} -m src.transcribe.batch_transcribe --file \"{win_source_path}\" --force"]
-        else:
-            argv = [win_py, "-m", "src.transcribe.batch_transcribe", "--file", win_source_path, "--force"]
-        return argv
+        return _cmd_diarize(entry, win_py, win_source_path, running_on_wsl)
     if action == "entity":
-        return [sys.executable, "-m", "src.extract.extract_all", "--base-dir", str(Path(str(entry.get("transcript_path") or workspace)).parent)]
+        return [
+            sys.executable, "-m", "src.extract.extract_all",
+            "--base-dir",
+            str(Path(str(entry.get("transcript_path") or workspace)).parent),
+        ]
     if action == "rag":
         return [sys.executable, "-m", "src.queue.gap_analyzer", "--json"]
     if action == "obsidian":
@@ -350,20 +365,45 @@ def run_worker(
         if _needs_env:
             # On Windows, pass Unicode file path via env var to avoid argv encoding issues
             env = os.environ.copy()
-            env["TRANSCRIBE_FILE"] = _wsl_to_win_path(str(entry.get("source_path", ""))) if entry.get("source_path") else ""
+            env["TRANSCRIBE_FILE"] = (
+                _wsl_to_win_path(str(entry.get("source_path", "")))
+                if entry.get("source_path") else ""
+            )
             if entry.get("reason") == "transcription_failed" or entry.get("next_action") == "diarize":
                 env["TRANSCRIBE_FORCE"] = "1"
             return (argv, env)
         return (argv, None)
 
-    commands = [{"queue_id": e.get("queue_id"), "next_action": e.get("next_action"), "argv": _build_cmd(e)[0], "env": _build_cmd(e)[1]} for e in due]
-    result = {"dry_run": dry_run, "selected": len(due), "commands": commands, "succeeded": 0, "failed": 0, "backup": None}
+    commands = [
+        {
+            "queue_id": e.get("queue_id"),
+            "next_action": e.get("next_action"),
+            "argv": _build_cmd(e)[0],
+            "env": _build_cmd(e)[1],
+        }
+        for e in due
+    ]
+    result = {
+        "dry_run": dry_run, "selected": len(due),
+        "commands": commands,
+        "succeeded": 0, "failed": 0, "backup": None,
+    }
     if dry_run or not due:
         return result
 
     backup = backup_queue(queue_path, workspace, now=ts)
     result["backup"] = str(backup) if backup else None
-    append_jsonl(DEFAULT_LOG_PATH if workspace == WORKSPACE else workspace / "logs" / "transcription_retry_worker.jsonl", {"at": ts, "event": "worker_start", "queue_path": str(queue_path), "backup": result["backup"], "selected": len(due)})
+    append_jsonl(
+        DEFAULT_LOG_PATH
+        if workspace == WORKSPACE
+        else workspace / "logs" / "transcription_retry_worker.jsonl",
+        {
+            "at": ts, "event": "worker_start",
+            "queue_path": str(queue_path),
+            "backup": result["backup"],
+            "selected": len(due),
+        },
+    )
     by_id = {str(e.get("queue_id")): e for e in entries}
     log_path = DEFAULT_LOG_PATH if workspace == WORKSPACE else workspace / "logs" / "transcription_retry_worker.jsonl"
     for item in commands:
@@ -373,7 +413,15 @@ def run_worker(
         entry["status"] = "running"
         entry["updated_at"] = ts
         write_queue(queue_path, entries)
-        append_jsonl(log_path, {"at": ts, "event": "attempt_start", "queue_id": entry.get("queue_id"), "next_action": entry.get("next_action"), "argv": argv})
+        append_jsonl(
+            log_path,
+            {
+                "at": ts, "event": "attempt_start",
+                "queue_id": entry.get("queue_id"),
+                "next_action": entry.get("next_action"),
+                "argv": argv,
+            },
+        )
         try:
             if env:
                 cp = runner(argv, cwd=str(workspace), timeout=timeout_seconds, text=True, capture_output=True, env=env)
@@ -385,16 +433,38 @@ def run_worker(
             if rc == 0:
                 mark_success(entry, now=ts, argv=argv, stdout=stdout, stderr=stderr)
                 result["succeeded"] += 1
-                append_jsonl(log_path, {"at": ts, "event": "attempt_succeeded", "queue_id": entry.get("queue_id"), "returncode": rc})
+                append_jsonl(
+                    log_path,
+                    {
+                        "at": ts, "event": "attempt_succeeded",
+                        "queue_id": entry.get("queue_id"),
+                        "returncode": rc,
+                    },
+                )
             else:
                 err = summarize_error(rc, stderr, stdout)
                 mark_failure(entry, now=ts, argv=argv, error=err)
                 result["failed"] += 1
-                append_jsonl(log_path, {"at": ts, "event": "attempt_failed", "queue_id": entry.get("queue_id"), "returncode": rc, "error": redact_sensitive_text(err, limit=500)})
+                append_jsonl(
+                    log_path,
+                    {
+                        "at": ts, "event": "attempt_failed",
+                        "queue_id": entry.get("queue_id"),
+                        "returncode": rc,
+                        "error": redact_sensitive_text(err, limit=500),
+                    },
+                )
         except Exception as exc:
             mark_failure(entry, now=ts, argv=argv, error=redact_sensitive_text(repr(exc), limit=500))
             result["failed"] += 1
-            append_jsonl(log_path, {"at": ts, "event": "attempt_exception", "queue_id": entry.get("queue_id"), "error": redact_sensitive_text(repr(exc), limit=500)})
+            append_jsonl(
+                log_path,
+                {
+                    "at": ts, "event": "attempt_exception",
+                    "queue_id": entry.get("queue_id"),
+                    "error": redact_sensitive_text(repr(exc), limit=500),
+                },
+            )
         write_queue(queue_path, entries)
     return result
 
@@ -433,18 +503,28 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "generate":
         result = generate_queue(args.report, args.queue, merge=not args.replace)
         if args.print_summary:
-            print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+            log.info(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
         else:
-            print(f"queue={result['queue_path']} generated={result['generated']} written={result['written']}")
+            log.info(f"queue={result['queue_path']} generated={result['generated']} written={result['written']}")
         return 0
     if args.cmd == "worker":
-        result = run_worker(queue_path=args.queue, workspace=args.workspace, dry_run=not args.execute, limit=args.limit, timeout_seconds=args.timeout_seconds)
+        result = run_worker(
+            queue_path=args.queue, workspace=args.workspace,
+            dry_run=not args.execute, limit=args.limit,
+            timeout_seconds=args.timeout_seconds,
+        )
         if args.print_json:
-            print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+            log.info(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
         else:
-            log.info(f"dry_run={result['dry_run']} selected={result['selected']} succeeded={result['succeeded']} failed={result['failed']} backup={result['backup']}")
+            log.info(
+                "dry_run=%s selected=%s succeeded=%s "
+                "failed=%s backup=%s",
+                result['dry_run'], result['selected'],
+                result['succeeded'], result['failed'],
+                result['backup'],
+            )
             for command in result["commands"]:
-                print(f"- {command['queue_id']} {command['next_action']}: {' '.join(command['argv'])}")
+                log.info(f"- {command['queue_id']} {command['next_action']}: {' '.join(command['argv'])}")
         return 1 if result.get("failed") else 0
     return 2
 

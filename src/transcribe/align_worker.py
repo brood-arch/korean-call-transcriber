@@ -8,6 +8,7 @@ Output: writes <segments_file>_result.json with aligned/diarized segments.
 This script ONLY imports whisperx (no faster_whisper/ctranslate2).
 """
 
+import logging
 import argparse
 import gc
 import json
@@ -26,6 +27,8 @@ warnings.filterwarnings("ignore")
 import numpy as np  # noqa: E402
 import torch  # noqa: E402
 
+log = logging.getLogger(__name__)
+
 # ── Logging ──────────────────────────────────────────────────────────────
 LOG = Path(os.environ.get("ALIGN_LOG", "logs/align_whisperx.log"))
 
@@ -39,7 +42,7 @@ def log(msg: str) -> None:
             f.write(line + "\n")
     except Exception as exc:
         log.warning(f"{ts} log write failed: {exc}")
-    print(line, flush=True)
+    log.info(line, flush=True)
 
 
 # ── GPU helpers ──────────────────────────────────────────────────────────
@@ -99,108 +102,118 @@ def load_audio(file: str, sr: int = 16000, retries: int = 2) -> np.ndarray:
 
 # ── Main ─────────────────────────────────────────────────────────────────
 
-def main() -> int:
+def _parse_args() -> argparse.Namespace:
+    """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description="WhisperX align + diarize worker")
     parser.add_argument("--audio", required=True, help="Path to audio file")
     parser.add_argument("--segments", required=True, help="JSON file with segments")
     parser.add_argument("--token", help="Path to HF token file")
     parser.add_argument("--no-diarize", action="store_true", help="Skip diarization")
-    args = parser.parse_args()
+    return parser.parse_args()
 
-    device = resolve_device("cuda")
-    log(f"Worker start: audio={Path(args.audio).name} device={device}")
 
-    # Load segments
+def _load_segments(segments_path: str) -> tuple[list, str | None]:
+    """Load segments JSON. Returns (segments, error)."""
     try:
-        segments = json.loads(Path(args.segments).read_text(encoding="utf-8"))
+        return json.loads(Path(segments_path).read_text(encoding="utf-8")), None
     except Exception as e:
         log(f"FATAL: cannot read segments file: {e}")
-        return 1
+        return [], str(e)
 
-    out_path = Path(str(args.segments).replace(".json", "_result.json"))
 
-    align_ok = False
-    diarize_ok = False
-    align_error: str | None = None
-    diarize_error: str | None = None
+def _run_alignment(
+    segments: list, audio_path: str, device: str,
+) -> tuple[list, bool, str | None]:
+    """Run WhisperX alignment with CPU fallback on CUDA OOM.
 
-    # ---- Step 1: Align ----
-    segs_aligned = segments
+    Returns (aligned_segments, success, error_message).
+    """
     try:
         import whisperx
         log("Loading audio for alignment...")
-        audio = load_audio(args.audio)
+        audio = load_audio(audio_path)
         log("Loading align model...")
         align_model, metadata = whisperx.load_align_model(language_code="ko", device=device)
         log(f"Aligning {len(segments)} segments...")
         t0 = time.time()
         result = whisperx.align(segments, align_model, metadata, audio, device)
         elapsed = time.time() - t0
-        segs_aligned = result.get("segments", []) if isinstance(result, dict) else result.segments
-        align_ok = True
-        log(f"Align OK: {len(segs_aligned)} segments in {elapsed:.1f}s")
+        segs = result.get("segments", []) if isinstance(result, dict) else result.segments
+        log(f"Align OK: {len(segs)} segments in {elapsed:.1f}s")
         del align_model, audio
         gc.collect()
         torch.cuda.empty_cache()
+        return segs, True, None
     except ImportError as e:
-        align_error = f"whisperx import failed: {e}"
-        log(f"ALIGN_FAIL: {align_error}")
+        msg = f"whisperx import failed: {e}"
+        log(f"ALIGN_FAIL: {msg}")
+        return segments, False, msg
     except RuntimeError as e:
-        align_error = str(e)
-        log(f"ALIGN_FAIL: {align_error}")
-        # If CUDA OOM, try once on CPU
-        if device == "cuda" and ("out of memory" in str(e).lower() or "cuda" in str(e).lower()):
-            log("Retrying alignment on CPU...")
-            try:
-                import whisperx
-                gc.collect()
-                torch.cuda.empty_cache()
-                audio = load_audio(args.audio)
-                align_model, metadata = whisperx.load_align_model(language_code="ko", device="cpu")
-                t0 = time.time()
-                result = whisperx.align(segments, align_model, metadata, audio, "cpu")
-                elapsed = time.time() - t0
-                segs_aligned = result.get("segments", []) if isinstance(result, dict) else result.segments
-                align_ok = True
-                align_error = None
-                log(f"Align OK (CPU retry): {len(segs_aligned)} segments in {elapsed:.1f}s")
-                del align_model, audio
-                gc.collect()
-            except Exception as e2:
-                align_error = f"CPU retry also failed: {e2}"
-                log(f"ALIGN_FAIL (CPU retry): {align_error}")
+        msg = str(e)
+        log(f"ALIGN_FAIL: {msg}")
+        if device == "cuda" and ("out of memory" in msg.lower() or "cuda" in msg.lower()):
+            return _retry_alignment_cpu(segments, audio_path, msg)
+        return segments, False, msg
     except Exception as e:
-        align_error = str(e)
-        log(f"ALIGN_FAIL: {align_error}")
+        msg = str(e)
+        log(f"ALIGN_FAIL: {msg}")
+        return segments, False, msg
 
-    # ---- Step 2: Diarize ----
-    segs_final = segs_aligned
-    if not args.no_diarize and args.token:
-        try:
-            from whisperx.diarize import DiarizationPipeline
-            hf_token = Path(args.token).read_text(encoding="utf-8").strip()
-            log("Loading diarization model...")
-            dm = DiarizationPipeline(token=hf_token, device=device)
-            log("Running diarization (min=2, max=2 speakers)...")
-            t0 = time.time()
-            diar = dm(args.audio, min_speakers=2, max_speakers=2)
-            elapsed = time.time() - t0
-            result_d = whisperx.assign_word_speakers(diar, {"segments": segs_aligned})
-            segs_final = result_d.get("segments", segs_aligned)
-            diarize_ok = True
-            log(f"Diarize OK in {elapsed:.1f}s")
-            del dm, diar
-            gc.collect()
-            torch.cuda.empty_cache()
-        except Exception as e:
-            diarize_error = str(e)
-            log(f"DIARIZE_FAIL: {diarize_error}")
-    elif args.no_diarize:
-        log("Diarization skipped (--no-diarize)")
-    elif not args.token:
-        log("Diarization skipped (no --token)")
 
-    # ---- Serialize output ----
+def _retry_alignment_cpu(
+    segments: list, audio_path: str, original_error: str,
+) -> tuple[list, bool, str | None]:
+    """Retry alignment on CPU after CUDA failure."""
+    log("Retrying alignment on CPU...")
+    try:
+        import whisperx
+        gc.collect()
+        torch.cuda.empty_cache()
+        audio = load_audio(audio_path)
+        align_model, metadata = whisperx.load_align_model(language_code="ko", device="cpu")
+        t0 = time.time()
+        result = whisperx.align(segments, align_model, metadata, audio, "cpu")
+        elapsed = time.time() - t0
+        segs = result.get("segments", []) if isinstance(result, dict) else result.segments
+        log(f"Align OK (CPU retry): {len(segs)} segments in {elapsed:.1f}s")
+        del align_model, audio
+        gc.collect()
+        return segs, True, None
+    except Exception as e2:
+        msg = f"CPU retry also failed: {e2}"
+        log(f"ALIGN_FAIL (CPU retry): {msg}")
+        return segments, False, msg
+
+
+def _run_diarization(
+    segs_aligned: list, audio_path: str, token_path: str, device: str,
+) -> tuple[list, bool, str | None]:
+    """Run speaker diarization. Returns (segments, success, error)."""
+    try:
+        import whisperx
+        from whisperx.diarize import DiarizationPipeline
+        hf_token = Path(token_path).read_text(encoding="utf-8").strip()
+        log("Loading diarization model...")
+        dm = DiarizationPipeline(token=hf_token, device=device)
+        log("Running diarization (min=2, max=2 speakers)...")
+        t0 = time.time()
+        diar = dm(audio_path, min_speakers=2, max_speakers=2)
+        elapsed = time.time() - t0
+        result_d = whisperx.assign_word_speakers(diar, {"segments": segs_aligned})
+        segs_final = result_d.get("segments", segs_aligned)
+        log(f"Diarize OK in {elapsed:.1f}s")
+        del dm, diar
+        gc.collect()
+        torch.cuda.empty_cache()
+        return segs_final, True, None
+    except Exception as e:
+        msg = str(e)
+        log(f"DIARIZE_FAIL: {msg}")
+        return segs_aligned, False, msg
+
+
+def _serialize_output(segs_final: list) -> list:
+    """Convert segments to output format."""
     output = []
     for seg in segs_final:
         item = {
@@ -211,7 +224,52 @@ def main() -> int:
         if "speaker" in seg:
             item["speaker"] = seg["speaker"]
         output.append(item)
+    return output
 
+
+def _write_result(out_path: Path, payload: dict) -> bool:
+    """Atomic write result JSON. Returns True on success."""
+    try:
+        tmp_path = out_path.with_suffix(".tmp")
+        tmp_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        tmp_path.replace(out_path)
+        return True
+    except Exception as e:
+        log(f"FATAL: cannot write result: {e}")
+        return False
+
+
+def main() -> int:
+    args = _parse_args()
+    device = resolve_device("cuda")
+    log(f"Worker start: audio={Path(args.audio).name} device={device}")
+
+    segments, load_err = _load_segments(args.segments)
+    if load_err:
+        return 1
+
+    out_path = Path(str(args.segments).replace(".json", "_result.json"))
+
+    # Step 1: Align
+    segs_aligned, align_ok, align_error = _run_alignment(
+        segments, args.audio, device,
+    )
+
+    # Step 2: Diarize
+    segs_final = segs_aligned
+    diarize_ok = False
+    diarize_error: str | None = None
+    if args.no_diarize:
+        log("Diarization skipped (--no-diarize)")
+    elif not args.token:
+        log("Diarization skipped (no --token)")
+    else:
+        segs_final, diarize_ok, diarize_error = _run_diarization(
+            segs_aligned, args.audio, args.token, device,
+        )
+
+    # Serialize & write
+    output = _serialize_output(segs_final)
     result_payload = {
         "segments": output,
         "_meta": {
@@ -222,14 +280,7 @@ def main() -> int:
             "device": device,
         },
     }
-
-    # Atomic write
-    try:
-        tmp_path = out_path.with_suffix(".tmp")
-        tmp_path.write_text(json.dumps(result_payload, ensure_ascii=False), encoding="utf-8")
-        tmp_path.replace(out_path)
-    except Exception as e:
-        log(f"FATAL: cannot write result: {e}")
+    if not _write_result(out_path, result_payload):
         return 1
 
     status_parts = []

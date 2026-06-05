@@ -55,7 +55,11 @@ def get_llm_config(api_key: str = "") -> LLMConfig:
     """
     return LLMConfig(
         api_key=api_key or get_env("LLM_API_KEY", "ZAI_API_KEY", deprecated=("ZAI_API_KEY",)),
-        base_url=get_env("LLM_BASE_URL", "ZAI_BASE_URL", default=DEFAULT_LLM_BASE_URL, deprecated=("ZAI_BASE_URL",)).rstrip("/"),
+        base_url=get_env(
+            "LLM_BASE_URL", "ZAI_BASE_URL",
+            default=DEFAULT_LLM_BASE_URL,
+            deprecated=("ZAI_BASE_URL",),
+        ).rstrip("/"),
         model=get_env("LLM_MODEL", default=DEFAULT_LLM_MODEL),
         disable_thinking=get_env("LLM_DISABLE_THINKING", default="auto").lower(),
     )
@@ -121,7 +125,15 @@ TELEGRAM_CHAT_ID = get_env("TELEGRAM_CHAT_ID")
 
 # Windows/WSL bridge
 WINDOWS_PYTHON = get_env("KCT_WINDOWS_PYTHON", "WINDOWS_PYTHON", default="python", deprecated=("WINDOWS_PYTHON",))
-WHISPERX_PYTHON = get_env("KCT_WHISPERX_PYTHON", "WHISPERX_PYTHON", default=r".\tools\whisperx-venv\Scripts\python.exe", deprecated=("WHISPERX_PYTHON",))
+WHISPERX_PYTHON = get_env(
+    "KCT_WHISPERX_PYTHON", "WHISPERX_PYTHON",
+    default=r".\tools\whisperx-venv\Scripts\python.exe",
+    deprecated=("WHISPERX_PYTHON",),
+)
 HF_TOKEN_FILE = get_env("KCT_HF_TOKEN_FILE", "HF_TOKEN_FILE", default="", deprecated=("HF_TOKEN_FILE",))
 KCT_ALIGN_WORKER = get_env("KCT_ALIGN_WORKER", default=r"src\transcribe\align_worker.py")
-CHROMA_INDEX_DIR = path_from_env("KCT_CHROMA_INDEX_DIR", "CHROMA_INDEX_DIR", default=TRANSCRIPT_DIR / "chroma_index", deprecated=("CHROMA_INDEX_DIR",))
+CHROMA_INDEX_DIR = path_from_env(
+    "KCT_CHROMA_INDEX_DIR", "CHROMA_INDEX_DIR",
+    default=TRANSCRIPT_DIR / "chroma_index",
+    deprecated=("CHROMA_INDEX_DIR",),
+)

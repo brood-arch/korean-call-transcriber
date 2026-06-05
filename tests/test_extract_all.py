@@ -136,7 +136,14 @@ class TestPipelineRun:
         pipe = IntegratedPipeline(args)
 
         # Mock fast_score to always process
-        with patch("src.extract.extract_all._get_fast_score", return_value=lambda t: {"should_process": True, "score": 1.0, "band": "definite_keep"}):
+        with patch(
+            "src.extract.extract_all._get_fast_score",
+            return_value=lambda t: {
+                "should_process": True,
+                "score": 1.0,
+                "band": "definite_keep",
+            },
+        ):
             with patch("src.extract.extract_all.setup_langfuse", return_value=None):
                 with patch("src.extract.extract_all.get_llm_config", return_value={"api_key": "test-key"}):
                     pipe._lf_available = False
@@ -181,7 +188,14 @@ class TestPipelineRun:
         pipe = IntegratedPipeline(args)
 
         # fast_score says "skip"
-        with patch("src.extract.extract_all._get_fast_score", return_value=lambda t: {"should_process": False, "score": 0.1, "band": "definite_drop"}):
+        with patch(
+            "src.extract.extract_all._get_fast_score",
+            return_value=lambda t: {
+                "should_process": False,
+                "score": 0.1,
+                "band": "definite_drop",
+            },
+        ):
             with patch("src.extract.extract_all.setup_langfuse", return_value=None):
                 with patch("src.extract.extract_all.get_llm_config", return_value={"api_key": "test-key"}):
                     pipe._lf_available = False

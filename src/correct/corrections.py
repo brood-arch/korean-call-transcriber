@@ -1,4 +1,4 @@
-﻿"""Persistent correction layer for call transcription text.
+"""Persistent correction layer for call transcription text.
 
 Supports two correction types:
 1. exact replacements — confident literal substitutions for recurring STT mistakes
@@ -110,13 +110,9 @@ def _term_boundary_pattern(term: str) -> re.Pattern[str]:
     return re.compile(rf"(?<![0-9A-Za-z가-힣]){escaped}(?![0-9A-Za-z가-힣])")
 
 
-def apply_corrections(text: str, source: str | None = None) -> tuple[str, list[dict[str, Any]]]:
-    """Apply all correction rules to *text*. Returns (corrected_text, changes_list)."""
-    rules = load_rules()
+def _apply_exact_replacements(text: str, rules: dict, changes: list) -> str:
+    """Apply enabled exact-replacement rules and collect changes."""
     updated = text
-    changes: list[dict[str, Any]] = []
-
-    # Exact replacements
     for rule in rules.get("exact_replacements", []):
         if not rule.get("enabled", True):
             continue
@@ -135,33 +131,53 @@ def apply_corrections(text: str, source: str | None = None) -> tuple[str, list[d
             "count": count,
             "note": rule.get("note"),
         })
+    return updated
 
-    # Aliases
+
+def _apply_alias_rule(updated: str, rule: dict, changes: list) -> str:
+    """Apply a single alias rule and collect changes."""
+    canonical = (rule.get("canonical") or "").strip()
+    variants = [str(v).strip() for v in rule.get("variants", []) if str(v).strip()]
+    if not canonical:
+        return updated
+    unique_variants = []
+    seen = set()
+    for variant in variants:
+        if variant == canonical or variant in seen:
+            continue
+        seen.add(variant)
+        unique_variants.append(variant)
+    for variant in sorted(unique_variants, key=len, reverse=True):
+        pattern = _term_boundary_pattern(variant)
+        updated, count = pattern.subn(canonical, updated)
+        if count > 0:
+            changes.append({
+                "type": "alias",
+                "from": variant,
+                "to": canonical,
+                "count": count,
+                "category": rule.get("category"),
+            })
+    return updated
+
+
+def _apply_aliases(text: str, rules: dict, changes: list) -> str:
+    """Apply enabled alias rules and collect changes."""
+    updated = text
     for rule in rules.get("aliases", []):
         if not rule.get("enabled", True):
             continue
-        canonical = (rule.get("canonical") or "").strip()
-        variants = [str(v).strip() for v in rule.get("variants", []) if str(v).strip()]
-        if not canonical:
-            continue
-        unique_variants = []
-        seen = set()
-        for variant in variants:
-            if variant == canonical or variant in seen:
-                continue
-            seen.add(variant)
-            unique_variants.append(variant)
-        for variant in sorted(unique_variants, key=len, reverse=True):
-            pattern = _term_boundary_pattern(variant)
-            updated, count = pattern.subn(canonical, updated)
-            if count > 0:
-                changes.append({
-                    "type": "alias",
-                    "from": variant,
-                    "to": canonical,
-                    "count": count,
-                    "category": rule.get("category"),
-                })
+        updated = _apply_alias_rule(updated, rule, changes)
+    return updated
+
+
+def apply_corrections(text: str, source: str | None = None) -> tuple[str, list[dict[str, Any]]]:
+    """Apply all correction rules to *text*. Returns (corrected_text, changes_list)."""
+    rules = load_rules()
+    changes: list[dict[str, Any]] = []
+
+    updated = _apply_exact_replacements(text, rules, changes)
+    updated = _apply_aliases(updated, rules, changes)
 
     if changes:
         log_event({
@@ -238,7 +254,12 @@ def add_alias(canonical: str, variants: list[str], category: str | None = None) 
                     continue
                 seen2.add(item)
                 merged.append(item)
-            rule.update({"variants": merged, "category": category or rule.get("category"), "enabled": True, "updated_at": _now_iso()})
+            rule.update({
+                "variants": merged,
+                "category": category or rule.get("category"),
+                "enabled": True,
+                "updated_at": _now_iso(),
+            })
             save_rules(rules)
             return rule
 

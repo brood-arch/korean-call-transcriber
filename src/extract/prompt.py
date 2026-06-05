@@ -93,7 +93,11 @@ UNIFIED_EXTRACT_PROMPT = """다음 통화 전사본에서 8가지를 한꺼번�
   "risks": [
     {{
       "severity": "high|medium|low",
-      "type": "missed_deadline|payment_delay|customer_complaint|stock_shortage|quality_issue|privacy|ambiguous_request|other",
+      "type": (
+          "missed_deadline|payment_delay|customer_complaint|"
+          "stock_shortage|quality_issue|privacy|"
+          "ambiguous_request|other"
+      ),
       "description": "위험 설명",
       "recommended_action": "권장 조치 또는 null",
       "source_quote": "전사문 원문 인용",
@@ -114,10 +118,13 @@ UNIFIED_EXTRACT_PROMPT = """다음 통화 전사본에서 8가지를 한꺼번�
 
 규칙:
 - **실행 주체 판단 (가장 중요):**
-  - 상대방이 직접 수행하는 일(상대방이 발송, 상대방이 제조, 상대방이 배송 등)은 TODO에서 제외하거나 owner="상대방"으로 표시
-  - 단, 상대방이 우리에게 무언가를 보낸다면 그건 우리 입장에선 "수령 대기"/"입고 확인"이지 "발송"/"배송 준비"가 아님
+  - 상대방이 직접 수행하는 일(상대방이 발송, 상대방이 제조, 상대방이 배송 등)은
+    TODO에서 제외하거나 owner="상대방"으로 표시
+  - 단, 상대방이 우리에게 무언가를 보낸다면 그건 우리 입장에선
+    "수령 대기"/"입고 확인"이지 "발송"/"배송 준비"가 아님
   - 항상 화자(사용자 vs 상대방)를 기준으로 누가 행동의 주체인지 파악할 것
-  - 예시: 상대방이 "내일 제품 3개 보내겠다" → title: "상대방 제품 3개 수령 대기", owner: "me" (우리가 받아야 하므로)
+  - 예시: 상대방이 "내일 제품 3개 보내겠다" → title: "상대방 제품 3개 수령 대기", owner: "me"
+    (우리가 받아야 하므로)
   - 예시: 사용자가 "내일 보내드리겠습니다" → title: "제품 발송", owner: "me"
   - 예시: 상대방이 "내일 방문하겠다" → TODO에서 제외 (상대방이 하는 일)
 - 날짜/시간이 불명확한 일정은 date/time을 null로

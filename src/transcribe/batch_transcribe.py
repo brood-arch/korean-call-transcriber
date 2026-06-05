@@ -1,4 +1,4 @@
-﻿"""Batch transcription with WhisperX.
+"""Batch transcription with WhisperX.
 
 Strategy: faster-whisper (main process) + align/diarize (subprocess to avoid DLL crash).
 
@@ -59,6 +59,8 @@ from src.config import (
 )
 from src.correct.transcription_corrections import apply_corrections, ensure_rules_file
 from src.pipeline.utils import safe_write_text
+
+log = logging.getLogger(__name__)
 
 # ffmpeg setup: ensure the Python Scripts dir (which may contain ffmpeg.exe) is in PATH
 os.environ["PATH"] = str(Path(sys.executable).parent) + os.pathsep + os.environ.get("PATH", "")
@@ -263,14 +265,35 @@ def parse_caller_info(stem: str) -> tuple[str | None, str | None]:
     return None, None
 
 
-def map_speakers(segments: list[dict], caller_name: str, caller_phone: str) -> list[dict]:
-    """Replace SPEAKER_00/01 with actual names using speech analysis heuristics.
+def _score_speaker_mapping(segments, sp0, sp1, dur0, dur1, hon0, hon1, first_sp):
+    """Compute score for whether sp0 is the caller."""
+    score0_is_caller = 0
+    if dur0 > dur1 * 1.3:
+        score0_is_caller += 1
+    elif dur1 > dur0 * 1.3:
+        score0_is_caller -= 1
+    if hon0 > hon1:
+        score0_is_caller += 2
+    elif hon1 > hon0:
+        score0_is_caller -= 2
+    if first_sp == sp0:
+        score0_is_caller += 1
+    else:
+        score0_is_caller -= 1
+    return score0_is_caller
 
-    Strategy: Determine which SPEAKER_ID is the caller vs the user using:
-    1. Speech duration ratio (caller often speaks longer in business calls)
-    2. Greeting patterns (first greeter = caller in outgoing calls)
-    3. Honorific patterns (counterpart uses honorifics toward the user)
-    """
+
+def _compute_honorifics(segments, sp):
+    """Count honorific usage for a speaker."""
+    honorifics = ["습니다", "입니다", "하십시오", "드리", "올리", "여쭤", "모시"]
+    return sum(
+        1 for s in segments
+        if s.get("speaker") == sp and any(h in s.get("text", "") for h in honorifics)
+    )
+
+
+def map_speakers(segments: list[dict], caller_name: str, caller_phone: str) -> list[dict]:
+    """Replace SPEAKER_00/01 with actual names using speech analysis heuristics."""
     if not caller_name or not any("SPEAKER" in str(s.get("speaker", "")).upper() for s in segments):
         return segments
 
@@ -281,41 +304,19 @@ def map_speakers(segments: list[dict], caller_name: str, caller_phone: str) -> l
     sp_list = sorted(speakers)
     sp0, sp1 = sp_list[0], sp_list[1]
 
-    # Metric 1: Total speaking time per speaker
     dur0 = sum(s.get("end", 0) - s.get("start", 0) for s in segments if s.get("speaker") == sp0)
     dur1 = sum(s.get("end", 0) - s.get("start", 0) for s in segments if s.get("speaker") == sp1)
+    hon0 = _compute_honorifics(segments, sp0)
+    hon1 = _compute_honorifics(segments, sp1)
 
-    # Metric 2: Honorific detection (Korean)
-    honorifics = ["습니다", "입니다", "하십시오", "드리", "올리", "여쭤", "모시"]
-    hon0 = sum(1 for s in segments if s.get("speaker") == sp0 and any(h in s.get("text", "") for h in honorifics))
-    hon1 = sum(1 for s in segments if s.get("speaker") == sp1 and any(h in s.get("text", "") for h in honorifics))
-
-    # Metric 3: First speaker
     first_sp = None
     for seg in segments:
         if seg.get("speaker"):
             first_sp = seg["speaker"]
             break
 
-    # Scoring: each metric votes
-    score0_is_caller = 0
+    score0_is_caller = _score_speaker_mapping(segments, sp0, sp1, dur0, dur1, hon0, hon1, first_sp)
 
-    if dur0 > dur1 * 1.3:
-        score0_is_caller += 1
-    elif dur1 > dur0 * 1.3:
-        score0_is_caller -= 1
-
-    if hon0 > hon1:
-        score0_is_caller += 2
-    elif hon1 > hon0:
-        score0_is_caller -= 2
-
-    if first_sp == sp0:
-        score0_is_caller += 1
-    else:
-        score0_is_caller -= 1
-
-    # Determine mapping
     if score0_is_caller > 0:
         mapping = {sp0: caller_name, sp1: MY_NAME}
     elif score0_is_caller < 0:
@@ -454,14 +455,22 @@ def align_and_diarize_subprocess(audio_path, segments_json, no_diarize=False):
     worker = Path(__file__).parent / "align_worker.py"
     if not worker.exists():
         log(f"Worker script not found: {worker}")
-        return None, {"align_ok": False, "diarize_ok": False, "align_error": "worker script not found", "diarize_error": None, "device": "unknown"}
+        return None, {
+            "align_ok": False, "diarize_ok": False,
+            "align_error": "worker script not found",
+            "diarize_error": None, "device": "unknown",
+        }
 
     tmp_json = OUTPUT_DIR / f"_segments_{Path(audio_path).stem}.json"
     try:
         tmp_json.write_text(json.dumps(segments_json, ensure_ascii=False), encoding="utf-8")
     except Exception as e:
         log(f"Failed to write segments JSON: {e}")
-        return segments_json, {"align_ok": False, "diarize_ok": False, "align_error": str(e), "diarize_error": None, "device": "unknown"}
+        return segments_json, {
+            "align_ok": False, "diarize_ok": False,
+            "align_error": str(e),
+            "diarize_error": None, "device": "unknown",
+        }
 
     cmd = [sys.executable, str(worker),
            "--audio", str(audio_path),
@@ -485,15 +494,168 @@ def align_and_diarize_subprocess(audio_path, segments_json, no_diarize=False):
         else:
             log(f"Worker failed: rc={result.returncode}")
             tmp_json.unlink(missing_ok=True)
-            return None, {"align_ok": False, "diarize_ok": False, "align_error": f"rc={result.returncode}", "diarize_error": None, "device": "unknown"}
+        return None, {
+            "align_ok": False, "diarize_ok": False,
+            "align_error": f"rc={result.returncode}",
+            "diarize_error": None, "device": "unknown",
+        }
     except subprocess.TimeoutExpired:
         log(f"Worker timeout for {Path(audio_path).name}")
         tmp_json.unlink(missing_ok=True)
-        return None, {"align_ok": False, "diarize_ok": False, "align_error": "timeout", "diarize_error": None, "device": "unknown"}
+        return None, {
+            "align_ok": False, "diarize_ok": False,
+            "align_error": "timeout",
+            "diarize_error": None, "device": "unknown",
+        }
     except Exception as e:
         log(f"Worker exception: {e}")
         tmp_json.unlink(missing_ok=True)
-        return None, {"align_ok": False, "diarize_ok": False, "align_error": str(e), "diarize_error": None, "device": "unknown"}
+        return None, {
+            "align_ok": False, "diarize_ok": False,
+            "align_error": str(e),
+            "diarize_error": None, "device": "unknown",
+        }
+
+
+def _write_transcript_output(audio_path, out_path, final_segments, audio_dur, quality_meta, had_diary_fail, t0):
+    """Apply corrections, write output, log results. Returns True on success."""
+    text = _format_segments_text(final_segments)
+    if len(text.strip()) < 10:
+        raise ValueError("Near-empty result")
+
+    corrected_text, changes = apply_corrections(text, source=audio_path.name)
+
+    actual_out = out_path
+    if out_path.exists():
+        actual_out = OUTPUT_DIR / f"{audio_path.stem}_{datetime.now().strftime('%H%M%S')}.txt"
+    safe_write_text(actual_out, corrected_text + "\n")
+
+    elapsed = time.time() - t0
+    rtf = audio_dur / elapsed if elapsed > 0 else 0
+    log_quality(audio_path.name, quality_meta, len(changes) if changes else 0, elapsed)
+
+    diary_flag = " [diarize fail]" if had_diary_fail else ""
+    log.info(
+        "  ✅ %.1fs (%.0fx) corrections=%d%s",
+        elapsed, rtf, len(changes) if changes else 0, diary_flag,
+        flush=True,
+    )
+
+
+def _process_single_audio(audio_path, out_path, args, i, total):
+    """Process a single audio file through the full pipeline."""
+    duration = get_audio_duration(audio_path)
+    if duration > MAX_AUDIO_DURATION_SEC:
+        log.info(
+            "[%d/%d] %s — too long, skipping", i, total, audio_path.name, flush=True,
+        )
+        return False
+
+    log.info("[%d/%d] %s (%.0fs)", i, total, audio_path.name, duration, flush=True)
+    t0 = time.time()
+
+    try:
+        final_segments, audio_dur, quality_meta, had_diary_fail = _perform_transcription(audio_path, args)
+        _write_transcript_output(audio_path, out_path, final_segments, audio_dur, quality_meta, had_diary_fail, t0)
+        return True
+    except Exception as e:
+        err_str = str(e)
+        fail_count = blacklist_add(audio_path.stem, err_str)
+        log("FAIL (%d/%d) %s: %s", fail_count, MAX_CONSECUTIVE_FAILURES, audio_path.name, err_str[:80])
+        return False
+
+
+def _prepare_pending_list(args):
+    """Build the list of pending audio files to transcribe."""
+    if args.file:
+        f = Path(args.file)
+        if not args.force and (OUTPUT_DIR / f"{f.stem}.txt").exists():
+            log(f"Already transcribed (skipping): {f.name}")
+            log.info(f"SKIP: {f.name} already transcribed", flush=True)
+            return []
+        return [f]
+
+    pending = get_pending(recent_first=args.recent_first)
+    if args.limit:
+        pending = pending[:args.limit]
+    return pending
+
+
+def _check_gpu_resources(args, gpu_free):
+    """Check GPU resources and attempt recovery if needed.
+
+    Returns (proceed: bool, gpu_free_mb: int).
+    """
+    if args.force or gpu_free >= GPU_MIN_FREE_MB:
+        return True, gpu_free
+
+    log.info(f"⚠️ GPU low ({gpu_free}MB)", flush=True)
+    killed = kill_gpu_hogs()
+    if killed:
+        time.sleep(2)
+        gpu_free = get_gpu_free_mb()
+    if gpu_free < GPU_MIN_FREE_MB:
+        log.info("❌ GPU insufficient. Skipping.", flush=True)
+        return False, gpu_free
+    return True, gpu_free
+
+
+def _format_segments_text(final_segments):
+    """Convert segments list to formatted text lines."""
+    lines = []
+    for seg in final_segments:
+        text = seg.get("text", "").strip()
+        if not text:
+            continue
+        speaker = seg.get("speaker")
+        if speaker:
+            lines.append(f"[{seg.get('start',0):.1f}-{seg.get('end',0):.1f}] {speaker}: {text}")
+        else:
+            lines.append(f"[{seg.get('start',0):.1f}-{seg.get('end',0):.1f}] {text}")
+    return "\n".join(lines)
+
+
+def _perform_transcription(audio_path, args):
+    """Run transcription + align/diarize + speaker mapping for one file.
+
+    Returns (final_segments, audio_dur, quality_meta, had_diary_fail).
+    """
+    caller_name, caller_phone = parse_caller_info(audio_path.stem)
+    segments, audio_dur, quality_meta = transcribe_only(audio_path)
+    if not segments:
+        raise ValueError("Empty transcription")
+
+    had_diary_fail = False
+    if audio_dur >= LONG_AUDIO_FAST_PATH_SEC:
+        final_segments = segments
+        log.info("  ⚡ Long audio fast path: skipping align/diarize", flush=True)
+    else:
+        final_segments, align_meta = align_and_diarize_subprocess(
+            audio_path, segments, args.no_diarize,
+        )
+        if final_segments is None:
+            final_segments = segments
+            had_diary_fail = True
+
+    if caller_name:
+        final_segments = map_speakers(final_segments, caller_name, caller_phone)
+
+    return final_segments, audio_dur, quality_meta, had_diary_fail
+
+
+def _run_batch(pending, args):
+    """Process pending audio files, return success count."""
+    success = 0
+    for i, audio_path in enumerate(pending, 1):
+        out_path = OUTPUT_DIR / f"{audio_path.stem}.txt"
+        if not args.force:
+            gpu_free = get_gpu_free_mb()
+            if gpu_free < GPU_MIN_FREE_PER_FILE:
+                log.info("[%d/%d] GPU low, stopping", i, len(pending), flush=True)
+                break
+        if _process_single_audio(audio_path, out_path, args, i, len(pending)):
+            success += 1
+    return success
 
 
 def main():
@@ -501,120 +663,30 @@ def main():
     ensure_rules_file()
     log("WhisperX transcription run started")
 
-    if args.file:
-        f = Path(args.file)
-        if not args.force and (OUTPUT_DIR / f"{f.stem}.txt").exists():
-            log(f"Already transcribed (skipping): {f.name}")
-            print(f"SKIP: {f.name} already transcribed", flush=True)
-            return 0
-        pending = [f]
-    else:
-        pending = get_pending(recent_first=args.recent_first)
-        if args.limit:
-            pending = pending[:args.limit]
-
+    pending = _prepare_pending_list(args)
     if not pending:
         log("All files transcribed")
-        print("ALL DONE")
+        log.info("ALL DONE")
         return 0
 
     gpu_free = get_gpu_free_mb()
     ram_pct = psutil.virtual_memory().percent
-    print(f"Pending: {len(pending)} | GPU free: {gpu_free}MB | RAM: {ram_pct}%", flush=True)
+    log.info(
+        "Pending: %d | GPU free: %dMB | RAM: %.0f%%",
+        len(pending), gpu_free, ram_pct, flush=True,
+    )
 
-    if not args.force and gpu_free < GPU_MIN_FREE_MB:
-        print(f"⚠️ GPU low ({gpu_free}MB)", flush=True)
-        killed = kill_gpu_hogs()
-        if killed:
-            time.sleep(2)
-            gpu_free = get_gpu_free_mb()
-        if gpu_free < GPU_MIN_FREE_MB:
-            print("❌ GPU insufficient. Skipping.", flush=True)
-            return EXIT_FAILURE
+    proceed, gpu_free = _check_gpu_resources(args, gpu_free)
+    if not proceed:
+        return EXIT_FAILURE
 
-    success = 0
-    for i, audio_path in enumerate(pending, 1):
-        out_path = OUTPUT_DIR / f"{audio_path.stem}.txt"
-
-        if not args.force:
-            gpu_free = get_gpu_free_mb()
-            if gpu_free < GPU_MIN_FREE_PER_FILE:
-                print(f"[{i}/{len(pending)}] GPU low, stopping", flush=True)
-                break
-
-        duration = get_audio_duration(audio_path)
-        if duration > MAX_AUDIO_DURATION_SEC:
-            print(f"[{i}/{len(pending)}] {audio_path.name} — too long, skipping", flush=True)
-            continue
-
-        print(f"[{i}/{len(pending)}] {audio_path.name} ({duration:.0f}s)", flush=True)
-        t0 = time.time()
-
-        try:
-            caller_name, caller_phone = parse_caller_info(audio_path.stem)
-
-            # Step 1: Transcribe
-            segments, audio_dur, quality_meta = transcribe_only(audio_path)
-            if not segments:
-                raise ValueError("Empty transcription")
-
-            # Steps 2+3: Align + Diarize
-            had_diary_fail = False
-            if audio_dur >= LONG_AUDIO_FAST_PATH_SEC:
-                final_segments = segments
-                align_meta = {"align_ok": True, "diarize_ok": True, "device": "skipped_long_audio"}
-                print("  ⚡ Long audio fast path: skipping align/diarize", flush=True)
-            else:
-                final_segments, align_meta = align_and_diarize_subprocess(audio_path, segments, args.no_diarize)
-                if final_segments is None:
-                    final_segments = segments
-                    had_diary_fail = True
-
-            # Speaker name mapping
-            if caller_name:
-                final_segments = map_speakers(final_segments, caller_name, caller_phone)
-
-            # Format text
-            lines = []
-            for seg in final_segments:
-                text = seg.get("text", "").strip()
-                if not text:
-                    continue
-                speaker = seg.get("speaker")
-                if speaker:
-                    lines.append(f"[{seg.get('start',0):.1f}-{seg.get('end',0):.1f}] {speaker}: {text}")
-                else:
-                    lines.append(f"[{seg.get('start',0):.1f}-{seg.get('end',0):.1f}] {text}")
-
-            text = "\n".join(lines)
-            if len(text.strip()) < 10:
-                raise ValueError("Near-empty result")
-
-            corrected_text, changes = apply_corrections(text, source=audio_path.name)
-
-            if out_path.exists():
-                out_path = OUTPUT_DIR / f"{audio_path.stem}_{datetime.now().strftime('%H%M%S')}.txt"
-            safe_write_text(out_path, corrected_text + "\n")
-            success += 1
-
-            elapsed = time.time() - t0
-            rtf = audio_dur / elapsed if elapsed > 0 else 0
-
-            log_quality(audio_path.name, quality_meta, len(changes) if changes else 0, elapsed)
-
-            diary_flag = " [diarize fail]" if had_diary_fail else ""
-            print(f"  ✅ {elapsed:.1f}s ({rtf:.0f}x) corrections={len(changes) if changes else 0}{diary_flag}", flush=True)
-
-        except Exception as e:
-            err_str = str(e)
-            fail_count = blacklist_add(audio_path.stem, err_str)
-            log(f"FAIL ({fail_count}/{MAX_CONSECUTIVE_FAILURES}) {audio_path.name}: {err_str[:80]}")
+    success = _run_batch(pending, args)
 
     gpu_after = get_gpu_free_mb()
-    print(f"\nDone: {success}/{len(pending)} | GPU: {gpu_after}MB", flush=True)
+    log.info("\nDone: %d/%d | GPU: %dMB", success, len(pending), gpu_after, flush=True)
     summary = {"success": success, "total": len(pending), "gpu_free_mb": gpu_after}
     if args.json:
-        print(json.dumps(summary, ensure_ascii=False), flush=True)
+        log.info(json.dumps(summary, ensure_ascii=False), flush=True)
     return EXIT_OK if success > 0 else EXIT_PARTIAL
 
 

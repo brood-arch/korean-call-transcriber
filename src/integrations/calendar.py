@@ -78,13 +78,13 @@ def check_today() -> dict:
             data = json.loads(resp.read().decode())
         items = data.get("items", [])
         if not items:
-            print("No events today")
+            log.info("No events today")
             return {"ok": True, "count": 0}
         for item in items:
             start = item.get("start", {})
             dt = start.get("dateTime", start.get("date", "?"))
             summary = item.get("summary", "(no title)")
-            print(f"  {dt} - {summary}")
+            log.info(f"  {dt} - {summary}")
         return {"ok": True, "count": len(items)}
     except urllib.error.HTTPError as e:
         body = e.read().decode()[:300]

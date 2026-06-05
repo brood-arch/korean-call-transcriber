@@ -44,7 +44,13 @@ def _make_queue(mock_psycopg2):
 
     mock_conn = MagicMock()
     mock_psycopg2.connect.return_value = mock_conn
-    mq = MinionsQueue(db_config={"host": "localhost", "port": 5432, "dbname": "test", "user": "test", "password": "test"})
+    mq = MinionsQueue(
+        db_config={
+            "host": "localhost", "port": 5432,
+            "dbname": "test", "user": "test",
+            "password": "test",
+        },
+    )
     return mq, mock_conn
 
 

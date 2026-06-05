@@ -1,4 +1,4 @@
-def test_sync_obsidian_dry_run_does_not_write(tmp_path, monkeypatch, capsys):
+def test_sync_obsidian_dry_run_does_not_write(tmp_path, monkeypatch, caplog):
     from src.sync import sync_obsidian
 
     source = tmp_path / "transcripts"
@@ -15,9 +15,11 @@ def test_sync_obsidian_dry_run_does_not_write(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(sync_obsidian, "STATE_FILE", state)
     monkeypatch.setattr("sys.argv", ["sync_obsidian", "--dry-run"])
 
-    sync_obsidian.main()
+    import logging
+    with caplog.at_level(logging.INFO, logger="src.sync.sync_obsidian"):
+        sync_obsidian.main()
 
-    assert "처리 완료: 1개" in capsys.readouterr().out
+    assert any("처리 완료: 1개" in r.message for r in caplog.records)
     assert not (vault / "transcripts" / "2026-06-01_Acme.md").exists()
     assert not state.exists()
 

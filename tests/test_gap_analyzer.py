@@ -1,4 +1,4 @@
-﻿import json
+import json
 
 
 def test_transcription_gap_analyzer_taxonomy_and_derivatives(tmp_path):
@@ -33,8 +33,20 @@ def test_transcription_gap_analyzer_taxonomy_and_derivatives(tmp_path):
         ),
         encoding="utf-8",
     )
-    (state_dir / "chroma_index_state.json").write_text(json.dumps({"files": {str(transcript_dir / f"{ok}.txt"): {}}}, ensure_ascii=False), encoding="utf-8")
-    (state_dir / "sync_transcripts_state.json").write_text(json.dumps({"processed": {f"{ok}.txt": {}}}, ensure_ascii=False), encoding="utf-8")
+    (state_dir / "chroma_index_state.json").write_text(
+        json.dumps(
+            {"files": {str(transcript_dir / f"{ok}.txt"): {}}},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (state_dir / "sync_transcripts_state.json").write_text(
+        json.dumps(
+            {"processed": {f"{ok}.txt": {}}},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
     (integrated_dir / "batch_0000.json").write_text(json.dumps({"files": [ok]}, ensure_ascii=False), encoding="utf-8")
     (log_dir / "transcribe_vv.log").write_text(
         f"2026-05-01 Speaker diarization JSON parse failed for {ok}.m4a: bad json\n",

@@ -74,26 +74,9 @@ def _extract_json_from_text(text: str) -> dict | None:
     return None
 
 
-def call_llm_json(
-    prompt: str,
-    *,
-    api_key: str = "",
-    base_url: str = "",
-    model: str = "",
-    max_tokens: int = 8192,
-    timeout: int = 180,
-    response_format: bool = True,
-) -> tuple[dict | None, dict]:
-    """Call an OpenAI-compatible LLM and parse JSON content from the response."""
-    import urllib.error
+def _build_llm_request(prompt, config, base_url, model, max_tokens, response_format, timeout):
+    """Build the HTTP request for an OpenAI-compatible LLM call."""
     import urllib.request
-
-    config = _resolve_llm_config(api_key)
-
-    # Early validation: refuse to make HTTP requests without an API key
-    if not config.api_key:
-        log.error("LLM_API_KEY is not configured; skipping API call")
-        return None, {"error": "missing_api_key"}
 
     resolved_base_url = (base_url or config.base_url).rstrip("/")
     resolved_model = model or config.model
@@ -113,73 +96,131 @@ def call_llm_json(
     payload = json.dumps(payload_obj).encode("utf-8")
 
     api_url = resolved_base_url + "/chat/completions"
-    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {config.api_key}"}
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {config.api_key}",
+    }
+    return urllib.request.Request(api_url, data=payload, headers=headers)
+
+
+def call_llm_json(
+    prompt: str,
+    *,
+    api_key: str = "",
+    base_url: str = "",
+    model: str = "",
+    max_tokens: int = 8192,
+    timeout: int = 180,
+    response_format: bool = True,
+) -> tuple[dict | None, dict]:
+    """Call an OpenAI-compatible LLM and parse JSON content from the response."""
+    config = _resolve_llm_config(api_key)
+
+    # Early validation: refuse to make HTTP requests without an API key
+    if not config.api_key:
+        log.error("LLM_API_KEY is not configured; skipping API call")
+        return None, {"error": "missing_api_key"}
+
+    req = _build_llm_request(
+        prompt, config, base_url, model, max_tokens, response_format, timeout,
+    )
 
     last_error = ""
     for attempt in range(MAX_RETRIES):
-        try:
-            req = urllib.request.Request(api_url, data=payload, headers=headers)
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                result = json.loads(resp.read().decode("utf-8"))
-
-            text = result.get("choices", [{}])[0].get("message", {}).get("content", "")
-            parsed = _extract_json_from_text(text)
-            if parsed is not None:
-                return parsed, result.get("usage", {})
-            log.warning("Attempt %d: could not extract JSON from LLM response", attempt + 1)
-            last_error = "json_extract_failed"
-            if attempt < MAX_RETRIES - 1:
-                time.sleep(5)
-
-        except json.JSONDecodeError as e:
-            last_error = f"json_decode: {e}"
-            log.warning("Attempt %d: JSON decode error: %s", attempt + 1, e)
-            if attempt < MAX_RETRIES - 1:
-                time.sleep(5)
-
-        except urllib.error.HTTPError as e:
-            status = e.code
-            body = ""
-            try:
-                body = e.read().decode("utf-8", errors="replace")[:200]
-            except Exception as exc:
-                log.debug("Failed to read LLM HTTP error body: %s", redact_sensitive_text(repr(exc)))
-
-            last_error = f"http_{status}"
-            if status == 429:
-                wait = 30 * (2 ** attempt)
-                log.warning("429 rate limit (attempt %d/%d), waiting %ds", attempt + 1, MAX_RETRIES, wait)
-                if attempt < MAX_RETRIES - 1:
-                    time.sleep(wait)
-            elif status >= 500:
-                wait = RETRY_BACKOFF[min(attempt, len(RETRY_BACKOFF) - 1)]
-                log.warning("Server error %d (attempt %d/%d), retrying in %ds", status, attempt + 1, MAX_RETRIES, wait)
-                if attempt < MAX_RETRIES - 1:
-                    time.sleep(wait)
-            elif status in _NON_RETRYABLE:
-                log.error("Non-retryable HTTP %d: %s", status, redact_sensitive_text(body[:100]))
-                break
-            else:
-                wait = RETRY_BACKOFF[min(attempt, len(RETRY_BACKOFF) - 1)]
-                log.warning("HTTP %d (attempt %d/%d), retrying in %ds", status, attempt + 1, MAX_RETRIES, wait)
-                if attempt < MAX_RETRIES - 1:
-                    time.sleep(wait)
-
-        except urllib.error.URLError as e:
-            last_error = f"network: {e}"
-            wait = RETRY_BACKOFF[min(attempt, len(RETRY_BACKOFF) - 1)]
-            log.warning("Network error (attempt %d/%d): %s", attempt + 1, MAX_RETRIES, redact_sensitive_text(repr(e)))
-            if attempt < MAX_RETRIES - 1:
-                time.sleep(wait)
-
-        except Exception as e:
-            last_error = f"unexpected: {type(e).__name__}: {e}"
-            log.exception("Unexpected error in LLM call (attempt %d/%d)", attempt + 1, MAX_RETRIES)
-            if attempt < MAX_RETRIES - 1:
-                time.sleep(5)
+        parsed, usage, err = _attempt_llm_call(req, timeout, attempt)
+        if err is None:
+            return parsed, usage
+        if err == "_break":
+            break
+        last_error = err
 
     log.error("All %d LLM attempts failed (last: %s)", MAX_RETRIES, last_error)
     return None, {"error": last_error, "attempts": MAX_RETRIES}
+
+
+def _attempt_llm_call(req, timeout, attempt):
+    """Execute one attempt of the LLM call.
+
+    Returns (parsed, usage, error_str).
+    error_str is None on success, or "_break" to stop retrying.
+    """
+    import urllib.error
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        return _handle_http_error_attempt(e, attempt)
+    except urllib.error.URLError as e:
+        return _handle_url_error(e, attempt)
+    except json.JSONDecodeError as e:
+        return _simple_retry(f"json_decode: {e}", 5, attempt)
+    except Exception as e:
+        log.exception("Unexpected error in LLM call (attempt %d/%d)", attempt + 1, MAX_RETRIES)
+        return _simple_retry(f"unexpected: {type(e).__name__}: {e}", 5, attempt)
+
+    text = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+    parsed = _extract_json_from_text(text)
+    if parsed is not None:
+        return parsed, result.get("usage", {}), None
+    log.warning("Attempt %d: could not extract JSON from LLM response", attempt + 1)
+    if attempt < MAX_RETRIES - 1:
+        time.sleep(5)
+    return None, None, "json_extract_failed"
+
+
+def _handle_http_error_attempt(e, attempt):
+    """Handle HTTPError for a single attempt. Returns (None, None, error_or_break)."""
+    status = e.code
+    body = ""
+    try:
+        body = e.read().decode("utf-8", errors="replace")[:200]
+    except Exception as exc:
+        log.debug("Failed to read LLM HTTP error body: %s", redact_sensitive_text(repr(exc)))
+
+    if status == 429:
+        wait = 30 * (2 ** attempt)
+        log.warning("429 rate limit (attempt %d/%d), waiting %ds", attempt + 1, MAX_RETRIES, wait)
+        if attempt < MAX_RETRIES - 1:
+            time.sleep(wait)
+        return None, None, f"http_{status}"
+
+    if status >= 500:
+        wait = RETRY_BACKOFF[min(attempt, len(RETRY_BACKOFF) - 1)]
+        log.warning("Server error %d (attempt %d/%d), retrying in %ds", status, attempt + 1, MAX_RETRIES, wait)
+        if attempt < MAX_RETRIES - 1:
+            time.sleep(wait)
+        return None, None, f"http_{status}"
+
+    if status in _NON_RETRYABLE:
+        log.error("Non-retryable HTTP %d: %s", status, redact_sensitive_text(body[:100]))
+        return None, None, "_break"
+
+    wait = RETRY_BACKOFF[min(attempt, len(RETRY_BACKOFF) - 1)]
+    log.warning("HTTP %d (attempt %d/%d), retrying in %ds", status, attempt + 1, MAX_RETRIES, wait)
+    if attempt < MAX_RETRIES - 1:
+        time.sleep(wait)
+    return None, None, f"http_{status}"
+
+
+def _handle_url_error(e, attempt):
+    """Handle URLError for a single attempt. Returns (None, None, error_str)."""
+    wait = RETRY_BACKOFF[min(attempt, len(RETRY_BACKOFF) - 1)]
+    log.warning(
+        "Network error (attempt %d/%d): %s",
+        attempt + 1, MAX_RETRIES, redact_sensitive_text(repr(e)),
+    )
+    if attempt < MAX_RETRIES - 1:
+        time.sleep(wait)
+    return None, None, f"network: {e}"
+
+
+def _simple_retry(error_str, backoff, attempt):
+    """Sleep and return a retryable error. Returns (None, None, error_str)."""
+    if attempt < MAX_RETRIES - 1:
+        time.sleep(backoff)
+    return None, None, error_str
 
 
 def call_llm_extract(api_key: str, content: str, run_id: str = "",

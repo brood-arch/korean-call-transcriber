@@ -26,20 +26,23 @@ Usage:
 
     # Fast scoring (no LLM needed)
     result = fast_score_transcript("주문 500개 확인해주세요")
-    print(result['band'], result['score'])
+    log.info(result['band'], result['score'])
 
     # Full signal detection
     result = detect_signals("Meeting with Acme Corp about 500 units order")
-    print(result['ideas'], result['entities'])
+    log.info(result['ideas'], result['entities'])
 """
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 KST = timezone(timedelta(hours=9))
 
@@ -340,12 +343,12 @@ def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == "--score":
         text = " ".join(sys.argv[2:])
         result = fast_score_transcript(text)
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        log.info(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     else:
         text = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else sys.stdin.read()
         result = detect_signals(text)
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        log.info(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
 
 

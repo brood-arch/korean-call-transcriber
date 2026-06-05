@@ -1,4 +1,4 @@
-﻿import json
+import json
 from datetime import datetime, timedelta, timezone
 
 
@@ -31,7 +31,12 @@ def test_health_ignores_timestamp_suffixed_recheck_transcripts(tmp_path, monkeyp
     monkeypatch.setattr(pipeline_health_check, "BLACKLIST_FILE", blacklist_file)
     monkeypatch.setattr(pipeline_health_check, "PERSISTENT_TODOS", todos_file)
 
-    assert pipeline_health_check.canonical_transcript_stem("caller_alpha_20260506130327_004143") == "caller_alpha_20260506130327"
+    assert (
+        pipeline_health_check.canonical_transcript_stem(
+            "caller_alpha_20260506130327_004143"
+        )
+        == "caller_alpha_20260506130327"
+    )
     assert pipeline_health_check.main() == 0
 
 

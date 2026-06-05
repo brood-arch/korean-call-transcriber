@@ -73,9 +73,21 @@ def _validate_todos(items: list) -> list:
             result.append({
                 "id_hint": str(item.get("id_hint", ""))[:50],
                 "title": str(item["title"]).strip(),
-                "owner": item.get("owner", "unknown") if item.get("owner") in ("me", "partner", "unknown") else "unknown",
-                "priority": item.get("priority", "medium") if item.get("priority") in ("high", "medium", "low") else "medium",
-                "status": item.get("status", "new") if item.get("status") in ("new", "in_progress", "waiting", "done", "cancelled") else "new",
+                "owner": (
+                    item.get("owner", "unknown")
+                    if item.get("owner") in ("me", "partner", "unknown")
+                    else "unknown"
+                ),
+                "priority": (
+                    item.get("priority", "medium")
+                    if item.get("priority") in ("high", "medium", "low")
+                    else "medium"
+                ),
+                "status": (
+                    item.get("status", "new")
+                    if item.get("status") in ("new", "in_progress", "waiting", "done", "cancelled")
+                    else "new"
+                ),
                 "due_date": str(item.get("due_date")) if item.get("due_date") else None,
                 "due_time": str(item.get("due_time")) if item.get("due_time") else None,
                 "context": str(item.get("context", ""))[:200],
@@ -105,7 +117,10 @@ def _validate_appointments(items: list) -> list:
 
 def _validate_entities(items: list) -> list:
     result = []
-    valid_types = {"Person", "Organization", "Location", "PhoneNumber", "Product", "Project", "Event", "Contract", "Other"}
+    valid_types = {
+        "Person", "Organization", "Location", "PhoneNumber",
+        "Product", "Project", "Event", "Contract", "Other"
+    }
     for item in items:
         if isinstance(item, dict) and item.get("name"):
             etype = item.get("type", "")
@@ -115,8 +130,16 @@ def _validate_entities(items: list) -> list:
                 "name": str(item["name"]).strip(),
                 "type": etype,
                 "canonical_name": str(item.get("canonical_name")) if item.get("canonical_name") else None,
-                "role": item.get("role", "unknown") if item.get("role") in ("customer", "supplier", "employee", "carrier", "unknown") else "unknown",
-                "attributes": item.get("attributes", {}) if isinstance(item.get("attributes"), dict) else {},
+                "role": (
+                    item.get("role", "unknown")
+                    if item.get("role") in ("customer", "supplier", "employee", "carrier", "unknown")
+                    else "unknown"
+                ),
+                "attributes": (
+                    item.get("attributes", {})
+                    if isinstance(item.get("attributes"), dict)
+                    else {}
+                ),
                 "source_quote": str(item.get("source_quote", ""))[:300],
                 "confidence": float(item.get("confidence", 0.5)),
             })
@@ -161,9 +184,20 @@ def _validate_money(items: list) -> list:
             result.append({
                 "amount": amount,
                 "currency": str(item.get("currency", "KRW")),
-                "kind": item.get("kind", "unknown") if item.get("kind") in valid_kinds else "unknown",
-                "related_to": str(item.get("related_to")) if item.get("related_to") else None,
-                "payment_status": item.get("payment_status", "unknown") if item.get("payment_status") in valid_statuses else "unknown",
+                "kind": (
+                    item.get("kind", "unknown")
+                    if item.get("kind") in valid_kinds
+                    else "unknown"
+                ),
+                "related_to": (
+                    str(item.get("related_to"))
+                    if item.get("related_to") else None
+                ),
+                "payment_status": (
+                    item.get("payment_status", "unknown")
+                    if item.get("payment_status") in valid_statuses
+                    else "unknown"
+                ),
                 "due_date": str(item.get("due_date")) if item.get("due_date") else None,
                 "source_quote": str(item.get("source_quote", ""))[:300],
                 "confidence": float(item.get("confidence", 0.5)),
@@ -174,7 +208,11 @@ def _validate_money(items: list) -> list:
 def _validate_risks(items: list) -> list:
     result = []
     valid_severities = {"high", "medium", "low"}
-    valid_types = {"missed_deadline", "payment_delay", "customer_complaint", "stock_shortage", "quality_issue", "privacy", "ambiguous_request", "other"}
+    valid_types = {
+        "missed_deadline", "payment_delay", "customer_complaint",
+        "stock_shortage", "quality_issue", "privacy",
+        "ambiguous_request", "other"
+    }
     for item in items:
         if isinstance(item, dict) and item.get("description"):
             result.append({

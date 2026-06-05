@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Deterministic transcription pipeline gap analyzer.
 
 Builds a repeatable cause taxonomy for the transcription
@@ -100,7 +100,10 @@ def iso_mtime(path: Path) -> str:
     return datetime.fromtimestamp(path.stat().st_mtime, tz=KST).isoformat()
 
 
-def file_record(path: Path, reason: str, *, stem: str | None = None, extra: dict[str, Any] | None = None) -> dict[str, Any]:
+def file_record(
+    path: Path, reason: str, *,
+    stem: str | None = None, extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     data: dict[str, Any] = {
         "file": path.name,
         "stem": stem or path.stem,
@@ -162,6 +165,91 @@ def load_diarization_failed(log_path: Path) -> set[str]:
     return failed
 
 
+def _classify_audio_gaps(
+    audio_by_stem, transcript_by_stem,
+    blacklisted_stems, failed_stems, blacklist_entries,
+    cause_files,
+):
+    """Classify audio files missing transcripts."""
+    audio_path_for = _audio_path_getter(audio_by_stem)
+    for stem, audio_path in sorted(audio_by_stem.items()):
+        if stem in transcript_by_stem:
+            continue
+        if stem in blacklisted_stems:
+            cause_files["blacklisted"].append(
+                file_record(audio_path, "blacklisted", stem=stem, extra={"blacklist": blacklist_entries.get(stem, {})})
+            )
+        elif stem in failed_stems:
+            cause_files["transcription_failed"].append(
+                file_record(
+                    audio_path, "transcription_failed",
+                    stem=stem,
+                    extra={"blacklist": blacklist_entries.get(stem, {})},
+                )
+            )
+        else:
+            cause_files["missing_transcript"].append(file_record(audio_path, "missing_transcript", stem=stem))
+
+
+def _classify_postprocess_gaps(
+    transcript_files, audio_by_stem, chroma_basenames,
+    obsidian_processed, integrated_processed,
+    cause_files,
+):
+    """Classify transcript post-processing gaps."""
+    for txt in transcript_files:
+        canonical = canonical_transcript_stem(txt.stem)
+        if canonical != txt.stem and canonical in audio_by_stem:
+            cause_files["derived_excluded"].append(
+                file_record(txt, "derived_excluded", stem=txt.stem, extra={"canonical_stem": canonical})
+            )
+
+    for txt in transcript_files:
+        if txt.name not in chroma_basenames:
+            cause_files["rag_pending"].append(file_record(txt, "rag_pending", stem=txt.stem))
+        if txt.name not in obsidian_processed:
+            cause_files["obsidian_pending"].append(file_record(txt, "obsidian_pending", stem=txt.stem))
+        if txt.stem not in integrated_processed:
+            cause_files["entity_pending"].append(file_record(txt, "entity_pending", stem=txt.stem))
+
+
+def _audio_path_getter(audio_by_stem):
+    """Return a no-op; kept for forward-compat."""
+    return None
+
+
+def _classify_diarization_failures(diarization_failed, audio_by_stem, audio_dir, cause_files):
+    """Classify diarization failures."""
+    for stem in sorted(diarization_failed):
+        path = audio_by_stem.get(stem) or audio_dir / f"{stem}.m4a"
+        cause_files["diarization_failed"].append(file_record(path, "diarization_failed", stem=stem))
+
+
+def _classify_gaps(
+    audio_by_stem, transcript_by_stem, transcript_files,
+    blacklisted_stems, failed_stems, chroma_basenames,
+    obsidian_processed, integrated_processed,
+    diarization_failed, blacklist_entries,
+    audio_dir, audio_path_for,
+):
+    """Classify all gaps into cause categories."""
+    cause_files: dict[str, list[dict[str, Any]]] = {k: [] for k in CAUSE_ORDER}
+
+    _classify_audio_gaps(
+        audio_by_stem, transcript_by_stem,
+        blacklisted_stems, failed_stems, blacklist_entries,
+        cause_files,
+    )
+    _classify_postprocess_gaps(
+        transcript_files, audio_by_stem, chroma_basenames,
+        obsidian_processed, integrated_processed,
+        cause_files,
+    )
+    _classify_diarization_failures(diarization_failed, audio_by_stem, audio_dir, cause_files)
+
+    return cause_files
+
+
 def analyze(
     *,
     workspace: Path,
@@ -192,43 +280,12 @@ def analyze(
     integrated_processed = load_integrated_processed(integrated_extraction_dir)
     diarization_failed = load_diarization_failed(transcribe_log)
 
-    cause_files: dict[str, list[dict[str, Any]]] = {k: [] for k in CAUSE_ORDER}
-
-    # Canonical transcription gap taxonomy: audio stem -> stem.txt.
-    for stem, audio_path in sorted(audio_by_stem.items()):
-        if stem in transcript_by_stem:
-            continue
-        if stem in blacklisted_stems:
-            cause_files["blacklisted"].append(
-                file_record(audio_path, "blacklisted", stem=stem, extra={"blacklist": blacklist_entries.get(stem, {})})
-            )
-        elif stem in failed_stems:
-            cause_files["transcription_failed"].append(
-                file_record(audio_path, "transcription_failed", stem=stem, extra={"blacklist": blacklist_entries.get(stem, {})})
-            )
-        else:
-            cause_files["missing_transcript"].append(file_record(audio_path, "missing_transcript", stem=stem))
-
-    # Files in transcript dir that are derivative timestamp-suffixed rechecks.
-    for txt in transcript_files:
-        canonical = canonical_transcript_stem(txt.stem)
-        if canonical != txt.stem and canonical in audio_by_stem:
-            cause_files["derived_excluded"].append(
-                file_record(txt, "derived_excluded", stem=txt.stem, extra={"canonical_stem": canonical})
-            )
-
-    # Downstream processing gaps are transcript-file oriented.
-    for txt in transcript_files:
-        if txt.name not in chroma_basenames:
-            cause_files["rag_pending"].append(file_record(txt, "rag_pending", stem=txt.stem))
-        if txt.name not in obsidian_processed:
-            cause_files["obsidian_pending"].append(file_record(txt, "obsidian_pending", stem=txt.stem))
-        if txt.stem not in integrated_processed:
-            cause_files["entity_pending"].append(file_record(txt, "entity_pending", stem=txt.stem))
-
-    for stem in sorted(diarization_failed):
-        path = audio_by_stem.get(stem) or audio_dir / f"{stem}.m4a"
-        cause_files["diarization_failed"].append(file_record(path, "diarization_failed", stem=stem))
+    cause_files = _classify_gaps(
+        audio_by_stem, transcript_by_stem, transcript_files,
+        blacklisted_stems, failed_stems, chroma_basenames,
+        obsidian_processed, integrated_processed, diarization_failed,
+        blacklist_entries, audio_dir, audio_dir,
+    )
 
     category_counts = {k: len(cause_files[k]) for k in CAUSE_ORDER}
     exact_complete = sum(1 for stem in audio_by_stem if stem in transcript_by_stem)
@@ -256,7 +313,11 @@ def analyze(
         ),
     }
 
-    if category_counts["missing_transcript"] or category_counts["transcription_failed"] or category_counts["missing_sync"]:
+    if (
+        category_counts["missing_transcript"]
+        or category_counts["transcription_failed"]
+        or category_counts["missing_sync"]
+    ):
         health = "danger"
         exit_code = 2
     elif any(category_counts[k] for k in CAUSE_ORDER if k != "derived_excluded"):
@@ -284,11 +345,21 @@ def analyze(
         "exit_code": exit_code,
         "method": {
             "pipeline_style_count": "Count all *.txt under transcript_dir, including derived recheck txt files.",
-            "exact_transcript_count": "Require transcript_dir/{audio_stem}.txt; derived {audio_stem}_HHMMSS.txt is excluded from canonical completion.",
-            "blacklist": "memory/state/transcribe_blacklist.json entries with blacklisted_at are intentionally excluded/held.",
+            "exact_transcript_count": (
+                "Require transcript_dir/{audio_stem}.txt; "
+                "derived {audio_stem}_HHMMSS.txt is excluded "
+                "from canonical completion."
+            ),
+            "blacklist": (
+                "memory/state/transcribe_blacklist.json entries "
+                "with blacklisted_at are intentionally excluded/held."
+            ),
             "rag": "memory/state/chroma_index_state.json file keys compared by basename.",
             "obsidian": "memory/state/sync_transcripts_state.json processed keys compared by transcript filename.",
-            "entity": "memory/state/integrated_extraction/batch_*.json files compared by stem; checkpoint.json absence is tolerated.",
+            "entity": (
+                "memory/state/integrated_extraction/batch_*.json files "
+                "compared by stem; checkpoint.json absence is tolerated."
+            ),
             "diarization": "logs/transcribe_vv.log unique 'Speaker diarization JSON parse failed for *.m4a' stems.",
         },
         "counts": counts,
@@ -314,9 +385,24 @@ def render_markdown(report: dict[str, Any], json_path: Path | None = None, max_a
         "",
         "## 결론",
         "",
-        f"- live pipeline-style count: {counts['pipeline_status_style_complete_txt_count']}/{counts['source_audio_total_valid_m4a']} (gap {counts['pipeline_status_style_gap_audio_minus_txt']}) — 단순 *.txt 카운트 방식.",
-        f"- 실제 재전사 pending 기준(exact stem.txt): {counts['exact_transcript_complete_count']}/{counts['source_audio_total_valid_m4a']} (gap {counts['exact_transcript_gap_count']}).",
-        f"- exact gap 중 blacklist {category_counts['blacklisted']}건, missing_transcript {category_counts['missing_transcript']}건, transcription_failed {category_counts['transcription_failed']}건.",
+        (
+            f"- live pipeline-style count: "
+            f"{counts['pipeline_status_style_complete_txt_count']}"
+            f"/{counts['source_audio_total_valid_m4a']} "
+            f"(gap {counts['pipeline_status_style_gap_audio_minus_txt']}) "
+            "— 단순 *.txt 카운트 방식."
+        ),
+        (
+            f"- 실재 재전사 pending 기준(exact stem.txt): "
+            f"{counts['exact_transcript_complete_count']}"
+            f"/{counts['source_audio_total_valid_m4a']} "
+            f"(gap {counts['exact_transcript_gap_count']})."
+        ),
+        (
+            f"- exact gap 중 blacklist {category_counts['blacklisted']}건, "
+            f"missing_transcript {category_counts['missing_transcript']}건, "
+            f"transcription_failed {category_counts['transcription_failed']}건."
+        ),
         f"- 재처리 큐 후보: {counts['reprocess_queue_candidates_count']}건 (blacklist/derived 제외).",
         "",
         "## 카테고리별 카운트",
@@ -327,7 +413,13 @@ def render_markdown(report: dict[str, Any], json_path: Path | None = None, max_a
     for reason in CAUSE_ORDER:
         lines.append(f"| {reason} | {category_counts[reason]} | {NEXT_ACTION[reason]} |")
 
-    lines += ["", f"## 즉시 액션 큐 상위 {max_action_rows}건", "", "| priority | reason | file | next_action |", "|---|---|---|---|"]
+    lines += [
+        "",
+        f"## 즋시 액션 큐 상위 {max_action_rows}건",
+        "",
+        "| priority | reason | file | next_action |",
+        "|---|---|---|---|",
+    ]
     for row in report["action_queue"][:max_action_rows]:
         lines.append(f"| {row['priority']} | {row['reason']} | `{row['file']}` | {row['next_action']} |")
     if not report["action_queue"]:

@@ -1,4 +1,4 @@
-﻿from datetime import timedelta, timezone
+from datetime import timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -30,23 +30,51 @@ def _report(tmp_path: Path):
         "transcript_dir": str(transcripts),
         "cause_files": {
             "missing_transcript": [
-                {"file": f"{stems['missing']}.m4a", "stem": stems["missing"], "reason": "missing_transcript", "priority": "P0", "source_path": str(audio / f"{stems['missing']}.m4a")}
+                {
+                    "file": f"{stems['missing']}.m4a",
+                    "stem": stems["missing"],
+                    "reason": "missing_transcript",
+                    "priority": "P0",
+                    "source_path": str(
+                        audio / f"{stems['missing']}.m4a"
+                    ),
+                }
             ],
             "transcription_failed": [],
             "diarization_failed": [
-                {"file": f"{stems['diarize']}.m4a", "stem": stems["diarize"], "reason": "diarization_failed", "priority": "P2"}
+                {
+                    "file": f"{stems['diarize']}.m4a",
+                    "stem": stems["diarize"],
+                    "reason": "diarization_failed",
+                    "priority": "P2",
+                }
             ],
             "entity_pending": [
-                {"file": f"{stems['entity']}.txt", "stem": stems["entity"], "reason": "entity_pending", "priority": "P2"}
+                {
+                    "file": f"{stems['entity']}.txt",
+                    "stem": stems["entity"],
+                    "reason": "entity_pending",
+                    "priority": "P2",
+                }
             ],
             "rag_pending": [
                 {"file": f"{stems['rag']}.txt", "stem": stems["rag"], "reason": "rag_pending", "priority": "P2"}
             ],
             "obsidian_pending": [
-                {"file": f"{stems['obsidian']}.txt", "stem": stems["obsidian"], "reason": "obsidian_pending", "priority": "P2"}
+                {
+                    "file": f"{stems['obsidian']}.txt",
+                    "stem": stems["obsidian"],
+                    "reason": "obsidian_pending",
+                    "priority": "P2",
+                }
             ],
             "blacklisted": [
-                {"file": f"{stems['blacklisted']}.m4a", "stem": stems["blacklisted"], "reason": "blacklisted", "priority": "P3"}
+                {
+                    "file": f"{stems['blacklisted']}.m4a",
+                    "stem": stems["blacklisted"],
+                    "reason": "blacklisted",
+                    "priority": "P3",
+                }
             ],
             "derived_excluded": [],
             "missing_sync": [],
@@ -96,7 +124,11 @@ def test_dry_run_worker_reports_commands_without_mutating_queue_or_backing_up(tm
     q.write_queue(queue_path, entries)
     before = queue_path.read_text(encoding="utf-8")
 
-    result = q.run_worker(queue_path=queue_path, workspace=tmp_path, dry_run=True, limit=3, now="2026-05-12T10:05:00+09:00")
+    result = q.run_worker(
+        queue_path=queue_path, workspace=tmp_path,
+        dry_run=True, limit=3,
+        now="2026-05-12T10:05:00+09:00",
+    )
 
     assert result["dry_run"] is True
     assert result["selected"] == 3
@@ -156,7 +188,12 @@ def test_worker_records_failure_attempt_backoff_log_and_backup(tmp_path):
             stderr = "err"
         return Result()
 
-    result = q.run_worker(queue_path=queue_path, workspace=tmp_path, dry_run=False, limit=1, now="2026-05-12T10:10:00+09:00", runner=fake_runner)
+    result = q.run_worker(
+        queue_path=queue_path, workspace=tmp_path,
+        dry_run=False, limit=1,
+        now="2026-05-12T10:10:00+09:00",
+        runner=fake_runner,
+    )
 
     updated = q.load_queue(queue_path)[0]
     assert result["failed"] == 1
@@ -185,7 +222,12 @@ def test_worker_marks_terminal_failure_after_max_attempts(tmp_path):
             stderr = "still broken"
         return Result()
 
-    q.run_worker(queue_path=queue_path, workspace=tmp_path, dry_run=False, limit=1, now="2026-05-12T10:10:00+09:00", runner=fake_runner)
+    q.run_worker(
+        queue_path=queue_path, workspace=tmp_path,
+        dry_run=False, limit=1,
+        now="2026-05-12T10:10:00+09:00",
+        runner=fake_runner,
+    )
     updated = q.load_queue(queue_path)[0]
     assert updated["status"] == "terminal_failure"
     assert updated["terminal_failure"] is True

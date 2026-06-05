@@ -138,6 +138,45 @@ def _same_source_overlap(t1: str, t2: str, threshold: float = 0.55) -> bool:
     return _jaccard_similarity(t1, t2) >= threshold
 
 
+def _group_by_source(todos_list: list) -> dict:
+    """Group TODOs by source field."""
+    from collections import defaultdict
+    by_source: dict = defaultdict(list)
+    for t in todos_list:
+        by_source[t.get("source", "")].append(t)
+    return by_source
+
+
+def _merge_overlapping_in_group(items: list) -> tuple[list, int]:
+    """Merge overlapping TODOs within a single source group.
+
+    Returns (kept_items, merge_count).
+    """
+    if len(items) <= 1:
+        return items, 0
+
+    kept = [items[0]]
+    merged_count = 0
+    for item in items[1:]:
+        title = item.get("title", "")
+        merged = False
+        for i, existing in enumerate(kept):
+            etitle = existing.get("title", "")
+            if _same_source_overlap(title, etitle):
+                if len(title) > len(etitle):
+                    kept[i] = item
+                merged = True
+                merged_count += 1
+                log.info(
+                    "Same-source merge: '%s' + '%s' → '%s'",
+                    etitle, title, kept[i]["title"],
+                )
+                break
+        if not merged:
+            kept.append(item)
+    return kept, merged_count
+
+
 def _dedup_same_source(todos_list: list) -> list:
     """Deduplicate TODOs from the same source that overlap in meaning.
 
@@ -146,35 +185,12 @@ def _dedup_same_source(todos_list: list) -> list:
     if len(todos_list) <= 1:
         return todos_list
 
-    from collections import defaultdict
-    by_source = defaultdict(list)
-    for t in todos_list:
-        by_source[t.get("source", "")].append(t)
-
+    by_source = _group_by_source(todos_list)
     result = []
     merged_count = 0
-    for source, items in by_source.items():
-        if len(items) <= 1:
-            result.extend(items)
-            continue
-        kept = [items[0]]
-        for item in items[1:]:
-            title = item.get("title", "")
-            merged = False
-            for i, existing in enumerate(kept):
-                etitle = existing.get("title", "")
-                if _same_source_overlap(title, etitle):
-                    if len(title) > len(etitle):
-                        kept[i] = item
-                    merged = True
-                    merged_count += 1
-                    log.info(
-                        "Same-source merge: '%s' + '%s' → '%s'",
-                        etitle, title, kept[i]["title"],
-                    )
-                    break
-            if not merged:
-                kept.append(item)
+    for _source, items in by_source.items():
+        kept, merges = _merge_overlapping_in_group(items)
+        merged_count += merges
         result.extend(kept)
 
     if merged_count:
@@ -184,30 +200,8 @@ def _dedup_same_source(todos_list: list) -> list:
 
 # ── Main merge ──────────────────────────────────────────────────────────
 
-def merge_todos(store: dict, new_todos: list) -> list:
-    """Merge newly extracted TODOs into persistent store.
-
-    Pipeline:
-        1. Same-source dedup (LLM often extracts overlapping TODOs)
-        2. Remove completed TODOs from store (exact + fuzzy)
-        3. Add new TODOs not already in store (exact + fuzzy check)
-        4. Return list of actually-new TODOs (for notification)
-
-    Args:
-        store: The persistent store dict.
-        new_todos: List of new TODO dicts (must have 'title' key).
-
-    Returns:
-        List of actually-new TODOs that were added.
-    """
-    # Phase 0: Same-source dedup before merging
-    new_todos = _dedup_same_source(new_todos)
-
-    completed_set = _load_completed_titles()
-    todos = store.get("todos", {})
-    actually_new = []
-
-    # Remove completed TODOs first (exact + fuzzy)
+def _remove_completed_todos(todos, completed_set):
+    """Remove completed TODOs from the store dict."""
     removed = []
     for key in list(todos.keys()):
         ttitle = todos[key].get("title", "")
@@ -217,41 +211,33 @@ def merge_todos(store: dict, new_todos: list) -> list:
     if removed:
         log.info("Removed completed: %s", removed)
 
-    # Add new TODOs
+
+def _add_new_todos(todos, new_todos, completed_set):
+    """Add new TODOs that aren't duplicates. Returns list of actually-new."""
     existing_titles = [v.get("title", "") for v in todos.values()]
     existing_keys = set(todos.keys())
-
+    actually_new = []
     for t in new_todos:
         title = t.get("title", "").strip()
         if not title:
             continue
-
-        # Skip if completed (exact + fuzzy)
         if _is_completed_fuzzy(title, completed_set):
             log.info("Skipping re-extracted completed TODO: '%s'", title)
             continue
-
         norm = _normalize(title)
         source = t.get("source", "")
-        # Normalize source: strip extensions (.m4a, .txt)
         for ext in (".m4a", ".txt"):
             if source.endswith(ext):
                 source = source[: -len(ext)]
                 break
         key = f"{norm}|{source}"
-
-        # Skip if already in store
         if source and any(source + ext in existing_keys for ext in (".m4a", ".txt")):
             continue
-
-        # Fuzzy dedup against existing
         if any(_is_fuzzy_match(title, existing) for existing in existing_titles):
             log.info("Fuzzy dedup: '%s' matches existing, skipping", title)
             continue
-
         entry = {
-            "title": title,
-            "source": source,
+            "title": title, "source": source,
             "priority": t.get("priority", "medium"),
             "status": t.get("status", "active"),
             "details": t.get("details", ""),
@@ -270,12 +256,20 @@ def merge_todos(store: dict, new_todos: list) -> list:
         existing_titles.append(title)
         existing_keys.add(key)
         actually_new.append(t)
+    return actually_new
+
+
+def merge_todos(store: dict, new_todos: list) -> list:
+    """Merge newly extracted TODOs into persistent store."""
+    new_todos = _dedup_same_source(new_todos)
+    completed_set = _load_completed_titles()
+    todos = store.get("todos", {})
+
+    _remove_completed_todos(todos, completed_set)
+    actually_new = _add_new_todos(todos, new_todos, completed_set)
 
     store["todos"] = todos
-    log.info(
-        "Store: %d active, %d new, %d removed",
-        len(todos), len(actually_new), len(removed),
-    )
+    log.info("Store: %d active, %d new", len(todos), len(actually_new))
     return actually_new
 
 

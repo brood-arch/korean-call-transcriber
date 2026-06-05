@@ -17,10 +17,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 _STATE_DIR = Path(os.environ.get("KCT_STATE_DIR", "state"))
 
@@ -121,7 +124,7 @@ def main() -> None:
     report = check_all(fix=args.fix)
 
     if args.json:
-        print(json.dumps(report, indent=2, ensure_ascii=False))
+        log.info(json.dumps(report, indent=2, ensure_ascii=False))
         sys.exit(0 if report["ok"] else 1)
 
     issues = []
@@ -139,13 +142,13 @@ def main() -> None:
     if args.quiet and not issues:
         sys.exit(0)
 
-    print(f"State validation — {'✅ OK' if report['ok'] else '❌ ISSUES FOUND'}")
-    print(f"Checked at: {report['checked_at']}")
+    log.info(f"State validation — {'✅ OK' if report['ok'] else '❌ ISSUES FOUND'}")
+    log.info(f"Checked at: {report['checked_at']}")
     if issues:
         for line in issues:
-            print(line)
+            log.info(line)
     else:
-        print("  All files present, fresh, and parseable.")
+        log.info("  All files present, fresh, and parseable.")
 
     sys.exit(0 if report["ok"] else 1)
 

@@ -118,6 +118,66 @@ def parse_entity_response(text: str) -> dict:
         return {"entities": [], "relations": [], "parse_error": True, "raw": cleaned[:500]}
 
 
+def _process_entity_batch(batch_files, api_key, api_delay):
+    """Process one batch of files for entity extraction.
+
+    Returns (batch_entities, batch_relations, batch_errors).
+    """
+    batch_entities = []
+    batch_relations = []
+    batch_errors = []
+
+    for file_path in batch_files:
+        file_id = file_path.stem
+        try:
+            content = file_path.read_text(encoding="utf-8").strip()
+            if not content:
+                batch_errors.append({"file": file_id, "error": "empty"})
+                continue
+
+            result = call_llm(content, api_key=api_key)
+            if result:
+                batch_entities.extend(result.get("entities", []))
+                batch_relations.extend(result.get("relations", []))
+            else:
+                batch_errors.append({"file": file_id, "error": "api_failed"})
+
+        except Exception as e:
+            log.warning("Entity extraction failed for %s: %s", file_id, e)
+            batch_errors.append({"file": file_id, "error": str(e)})
+
+        time.sleep(api_delay)
+
+    return batch_entities, batch_relations, batch_errors
+
+
+def _resolve_start_batch(state_dir, args_start_batch, force_restart):
+    """Determine starting batch index from checkpoint or args."""
+    checkpoint_path = state_dir / "checkpoint.json"
+    start_batch = args_start_batch
+    if checkpoint_path.exists() and not force_restart:
+        try:
+            with open(checkpoint_path) as f:
+                checkpoint = json.load(f)
+            start_batch = max(start_batch, checkpoint.get("last_completed_batch", -1) + 1)
+        except (json.JSONDecodeError, OSError) as exc:
+            log.debug("Failed to load checkpoint: %s", exc)
+    return start_batch
+
+
+def _is_batch_done(batch_result_path, force_restart):
+    """Check if a batch result already exists and is done."""
+    if not batch_result_path.exists() or force_restart:
+        return False
+    try:
+        with open(batch_result_path) as f:
+            existing = json.load(f)
+        return existing.get("status") == "done"
+    except (json.JSONDecodeError, KeyError) as exc:
+        log.debug("Failed to inspect existing batch: %s", exc)
+        return False
+
+
 def run_extraction(args):
     """Main extraction pipeline."""
     base_dir = Path(args.base_dir)
@@ -131,91 +191,62 @@ def run_extraction(args):
 
     files = get_all_transcription_files(base_dir)
     total_files = len(files)
-    print(f"Found {total_files} transcription files")
-
+    log.info(f"Found {total_files} transcription files")
     if total_files == 0:
         return EXIT_OK
 
     total_batches = (total_files + args.batch_size - 1) // args.batch_size
-
-    checkpoint_path = state_dir / "checkpoint.json"
-    start_batch = args.start_batch
-    if checkpoint_path.exists() and not args.force_restart:
-        try:
-            with open(checkpoint_path) as f:
-                checkpoint = json.load(f)
-            start_batch = max(start_batch, checkpoint.get("last_completed_batch", -1) + 1)
-        except (json.JSONDecodeError, OSError) as exc:
-            log.debug("Failed to load checkpoint: %s", exc)
+    start_batch = _resolve_start_batch(state_dir, args.start_batch, args.force_restart)
 
     for batch_idx in range(start_batch, total_batches):
-        batch_start = batch_idx * args.batch_size
-        batch_end = min(batch_start + args.batch_size, total_files)
-        batch_files = files[batch_start:batch_end]
-        batch_id = f"batch_{batch_idx:04d}"
+        _run_entity_batch(batch_idx, total_batches, total_files, files, state_dir, api_key, args)
 
-        batch_result_path = state_dir / f"{batch_id}.json"
-        if batch_result_path.exists() and not args.force_restart:
-            try:
-                with open(batch_result_path) as f:
-                    existing = json.load(f)
-                if existing.get("status") == "done":
-                    continue
-            except (json.JSONDecodeError, KeyError) as exc:
-                log.debug("Failed to inspect existing batch %s: %s", batch_id, exc)
-
-        batch_entities = []
-        batch_relations = []
-        batch_errors = []
-
-        for file_path in batch_files:
-            file_id = file_path.stem
-            try:
-                content = file_path.read_text(encoding="utf-8").strip()
-                if not content:
-                    batch_errors.append({"file": file_id, "error": "empty"})
-                    continue
-
-                result = call_llm(content, api_key=api_key)
-                if result:
-                    batch_entities.extend(result.get("entities", []))
-                    batch_relations.extend(result.get("relations", []))
-                else:
-                    batch_errors.append({"file": file_id, "error": "api_failed"})
-
-            except Exception as e:
-                log.warning("Entity extraction failed for %s: %s", file_id, e)
-                batch_errors.append({"file": file_id, "error": str(e)})
-
-            time.sleep(args.api_delay)
-
-        batch_output = {
-            "batch_id": batch_id,
-            "files_total": len(batch_files),
-            "entities_found": len(batch_entities),
-            "relations_found": len(batch_relations),
-            "entities": batch_entities,
-            "relations": batch_relations,
-            "errors": batch_errors,
-            "status": "done",
-            "timestamp": datetime.now().isoformat(),
-        }
-        safe_save_json(batch_result_path, batch_output, origin="entity_extraction")
-
-        print(f"  [{batch_id}] {len(batch_entities)} entities, {len(batch_relations)} relations, {len(batch_errors)} errors")
-
-        checkpoint = {
-            "last_completed_batch": batch_idx,
-            "total_batches": total_batches,
-            "last_updated": datetime.now().isoformat(),
-        }
-        safe_save_json(checkpoint_path, checkpoint, origin="entity_extraction")
-
-        if batch_idx < total_batches - 1:
-            time.sleep(args.api_delay)
-
-    print(f"\nExtraction complete: {total_batches} batches processed")
+    log.info(f"\nExtraction complete: {total_batches} batches processed")
     return EXIT_OK
+
+
+def _run_entity_batch(batch_idx, total_batches, total_files, files, state_dir, api_key, args):
+    """Process and save a single batch of entity extractions."""
+    batch_start = batch_idx * args.batch_size
+    batch_end = min(batch_start + args.batch_size, total_files)
+    batch_files = files[batch_start:batch_end]
+    batch_id = f"batch_{batch_idx:04d}"
+
+    batch_result_path = state_dir / f"{batch_id}.json"
+    if _is_batch_done(batch_result_path, args.force_restart):
+        return
+
+    batch_entities, batch_relations, batch_errors = _process_entity_batch(
+        batch_files, api_key, args.api_delay,
+    )
+
+    batch_output = {
+        "batch_id": batch_id,
+        "files_total": len(batch_files),
+        "entities_found": len(batch_entities),
+        "relations_found": len(batch_relations),
+        "entities": batch_entities,
+        "relations": batch_relations,
+        "errors": batch_errors,
+        "status": "done",
+        "timestamp": datetime.now().isoformat(),
+    }
+    safe_save_json(batch_result_path, batch_output, origin="entity_extraction")
+
+    log.error(
+        f"  [{batch_id}] {len(batch_entities)} entities, "
+        f"{len(batch_relations)} relations, {len(batch_errors)} errors"
+    )
+
+    checkpoint = {
+        "last_completed_batch": batch_idx,
+        "total_batches": total_batches,
+        "last_updated": datetime.now().isoformat(),
+    }
+    safe_save_json(state_dir / "checkpoint.json", checkpoint, origin="entity_extraction")
+
+    if batch_idx < total_batches - 1:
+        time.sleep(args.api_delay)
 
 
 def main():
@@ -230,9 +261,9 @@ def main():
     args = parser.parse_args()
 
     if args.dry_run:
-        print("DRY RUN — Entity Extraction Pipeline")
-        print(f"Base dir: {args.base_dir}")
-        print(f"Files: {len(get_all_transcription_files(args.base_dir))}")
+        log.info("DRY RUN — Entity Extraction Pipeline")
+        log.info(f"Base dir: {args.base_dir}")
+        log.info(f"Files: {len(get_all_transcription_files(args.base_dir))}")
     else:
         run_extraction(args)
 

@@ -199,33 +199,33 @@ def run_auto_classifier() -> dict:
     Returns:
         Classification results dict from scan_inbox().
     """
-    print("=" * 80)
-    print(f"Gmail Auto Classifier - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("=" * 80)
+    log.info("=" * 80)
+    log.info(f"Gmail Auto Classifier - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    log.info("=" * 80)
 
     results = scan_inbox(max_emails=50)
 
-    print("\n[Results]")
-    print(f"  - Ads: {len(results['ads'])}")
-    print(f"  - Important: {len(results['important'])}")
-    print(f"  - Normal: {len(results['normal'])}")
+    log.info("\n[Results]")
+    log.info(f"  - Ads: {len(results['ads'])}")
+    log.info(f"  - Important: {len(results['important'])}")
+    log.info(f"  - Normal: {len(results['normal'])}")
 
     if results["important"]:
-        print("\n[Important Emails]:")
+        log.info("\n[Important Emails]:")
         for i, em in enumerate(results["important"], 1):
-            print(f"  {i}. {em['subject']}")
-            print(f"     From: {em['sender']}")
+            log.info(f"  {i}. {em['subject']}")
+            log.info(f"     From: {em['sender']}")
 
     if results["ads"]:
-        print("\n[Ads to Move to Trash]:")
+        log.info("\n[Ads to Move to Trash]:")
         for i, em in enumerate(results["ads"], 1):
-            print(f"  {i}. {em['subject']}")
+            log.info(f"  {i}. {em['subject']}")
 
         mail = connect_gmail()
         ad_ids = [e["id"] for e in results["ads"]]
         move_to_trash(mail, ad_ids)
         mail.logout()
-        print(f"\n[OK] Moved {len(ad_ids)} ad emails to trash")
+        log.info(f"\n[OK] Moved {len(ad_ids)} ad emails to trash")
 
     return results
 

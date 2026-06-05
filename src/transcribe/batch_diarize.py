@@ -55,6 +55,57 @@ def find_missing(transcript_dir: Path, limit: int = 0) -> list:
     return missing
 
 
+def _build_diarize_argv(stem, segs_path, audio_path, running_on_wsl):
+    """Build the argv for diarization subprocess."""
+    if running_on_wsl:
+        win_audio = wsl_path_to_windows(audio_path)
+        win_segs = wsl_path_to_windows(segs_path)
+        win_token = HF_TOKEN_FILE
+        wsl_python = "~/.openclaw/workspace/tools/whisperx-venv/Scripts/python.exe"
+        win_script = str(WIN_ALIGN_WORKER)
+        return [wsl_python, "-u", win_script, "--audio", win_audio, "--segments", win_segs, "--token", win_token]
+    win_audio = str(audio_path)
+    win_segs = str(segs_path)
+    return [WIN_PYTHON, "-u", WIN_ALIGN_WORKER, "--audio", win_audio, "--segments", win_segs, "--token", HF_TOKEN_FILE]
+
+
+def _run_diarize_one(stem, segs_path, audio_path, transcript_dir, running_on_wsl):
+    """Run diarization for one file. Returns True on success."""
+    argv = _build_diarize_argv(stem, segs_path, audio_path, running_on_wsl)
+    try:
+        result = subprocess.run(
+            argv, capture_output=True, text=True, timeout=600,
+            encoding="utf-8", errors="replace",
+        )
+        result_path = transcript_dir / (stem + ".segments_result.json")
+        if result_path.exists():
+            size = result_path.stat().st_size
+            meta_ok = True
+            try:
+                payload = json.loads(result_path.read_text(encoding="utf-8"))
+                meta = payload.get("_meta", {})
+                if not meta.get("align_ok", False) or not meta.get("diarize_ok", False):
+                    meta_ok = False
+            except Exception as exc:
+                log.warning("could not inspect result metadata: %s", exc)
+            if not meta_ok or result.returncode not in (0, 3221226505):
+                log.warning("%s bytes, exit=%s, meta_ok=%s", size, result.returncode, meta_ok)
+                return False
+            log.info("  OK (%s bytes)", size)
+            return True
+        else:
+            log.error("FAIL (exit=%s)", result.returncode)
+            if result.stderr:
+                log.info("  stderr: %s", result.stderr[-500:])
+            return False
+    except subprocess.TimeoutExpired:
+        log.info("  TIMEOUT")
+        return False
+    except Exception as e:
+        log.error("%s", e)
+        return False
+
+
 def main():
     parser = argparse.ArgumentParser(description="Batch diarize missing segments")
     parser.add_argument("--transcript-dir", default=None,
@@ -68,110 +119,39 @@ def main():
                         help="Only process files from last N days (0=all)")
     args = parser.parse_args()
 
-    # Detect OS and set paths
     running_on_wsl = is_wsl()
-
     if running_on_wsl:
-        if args.transcript_dir:
-            transcript_dir = Path(args.transcript_dir)
-        else:
-            transcript_dir = Path("data/전사본")
+        transcript_dir = Path(args.transcript_dir) if args.transcript_dir else Path("data/전사본")
     else:
         transcript_dir = Path(args.transcript_dir or WIN_TRANSCRIPT_DIR)
-
     if not transcript_dir.exists():
-        log.error(f"transcript dir not found: {transcript_dir}")
+        log.error("transcript dir not found: %s", transcript_dir)
         sys.exit(1)
 
-    # Find missing segments
     missing = find_missing(transcript_dir, args.limit)
-
-    # Filter by days if requested
     if args.days > 0:
         from datetime import datetime, timedelta, timezone
         KST = timezone(timedelta(hours=9))
         cutoff = datetime.now(KST) - timedelta(days=args.days)
-        filtered = []
-        for stem, segs, audio in missing:
-            try:
-                mt = datetime.fromtimestamp(segs.stat().st_mtime, tz=KST)
-                if mt >= cutoff:
-                    filtered.append((stem, segs, audio))
-            except Exception as exc:
-                log.warning(f"failed to stat segments file: {exc}")
-        missing = filtered
-
+        missing = [
+            (stem, segs, audio) for stem, segs, audio in missing
+            if datetime.fromtimestamp(segs.stat().st_mtime, tz=KST) >= cutoff
+        ]
     if not missing:
-        print("No missing diarization results found.")
+        log.info("No missing diarization results found.")
         sys.exit(0)
-
-    print(f"Found {len(missing)} files needing diarization.")
+    log.info("Found %d files needing diarization.", len(missing))
 
     ok = 0
     fail = 0
     for i, (stem, segs_path, audio_path) in enumerate(missing):
-        print(f"\n[{i+1}/{len(missing)}] {stem}")
-
-        if running_on_wsl:
-            # Convert WSL paths to Windows paths for the worker
-            win_audio = wsl_path_to_windows(audio_path)
-            win_segs = wsl_path_to_windows(segs_path)
-            win_token = HF_TOKEN_FILE
-            python_exe = WIN_PYTHON
-            script = WIN_ALIGN_WORKER
+        log.info("\n[%d/%d] %s", i + 1, len(missing), stem)
+        if _run_diarize_one(stem, segs_path, audio_path, transcript_dir, running_on_wsl):
+            ok += 1
         else:
-            win_audio = str(audio_path)
-            win_segs = str(segs_path)
-            win_token = HF_TOKEN_FILE
-            python_exe = WIN_PYTHON
-            script = WIN_ALIGN_WORKER
-
-        if running_on_wsl:
-            # Run Windows Python directly from WSL without cmd.exe.
-            # subprocess(list) preserves spaces in data safely.
-            wsl_python = "~/.openclaw/workspace/tools/whisperx-venv/Scripts/python.exe"
-            win_script = str(WIN_ALIGN_WORKER)
-            argv = [wsl_python, "-u", win_script, "--audio", win_audio, "--segments", win_segs, "--token", win_token]
-        else:
-            argv = [python_exe, "-u", script, "--audio", win_audio, "--segments", win_segs, "--token", win_token]
-
-        try:
-            result = subprocess.run(
-                argv,
-                capture_output=True, text=True, timeout=600,
-                encoding="utf-8", errors="replace"
-            )
-            # Check output file existence (Windows subprocess exit codes are unreliable)
-            result_path = transcript_dir / (stem + ".segments_result.json")
-            if result_path.exists():
-                size = result_path.stat().st_size
-                meta_ok = True
-                try:
-                    payload = json.loads(result_path.read_text(encoding="utf-8"))
-                    meta = payload.get("_meta", {})
-                    if not meta.get("align_ok", False) or not meta.get("diarize_ok", False):
-                        meta_ok = False
-                except Exception as exc:
-                    log.warning("could not inspect result metadata: %s", exc)
-                if not meta_ok or result.returncode not in (0, 3221226505):
-                    log.warning("%s bytes, exit=%s, meta_ok=%s", size, result.returncode, meta_ok)
-                    fail += 1
-                else:
-                    print(f"  OK ({size} bytes)")
-                    ok += 1
-            else:
-                log.error(f"FAIL (exit={result.returncode})")
-                if result.stderr:
-                    print(f"  stderr: {result.stderr[-500:]}")
-                fail += 1
-        except subprocess.TimeoutExpired:
-            print("  TIMEOUT")
-            fail += 1
-        except Exception as e:
-            log.error(f"{e}")
             fail += 1
 
-    log.info(f"DONE {ok}/{len(missing)} diarized, {fail} failed")
+    log.info("DONE %d/%d diarized, %d failed", ok, len(missing), fail)
     sys.exit(1 if fail > 0 else 0)
 
 

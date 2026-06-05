@@ -178,6 +178,95 @@ def call_llm_extract(content: str, api_key: str = "", base_url: str = "", model:
 
 
 # ── Main extraction pipeline ───────────────────────────────────────────
+def _parse_sender(meta: dict) -> tuple[str, str]:
+    """Extract (from_addr, from_name) from email meta."""
+    from_raw = meta.get("from", "")
+    email_match = re.search(r"<([^>]+)>", from_raw)
+    from_addr = email_match.group(1).lower().strip() if email_match else from_raw.lower().strip()
+    name_match = re.match(r'["\']?(.+?)["\']?\s*<', from_raw)
+    from_name = name_match.group(1).strip().strip('"').strip("'") if name_match else from_addr.split("@")[0]
+    return from_addr, from_name
+
+
+def _extract_todos_from_row(row, excluded_addrs, extracted_uids) -> list[dict[str, Any]] | None:
+    """Process one email row. Returns list of TODO entries, or None to skip."""
+    meta = row.get("meta", {})
+    staged_path = row.get("staged", "")
+    folder = row.get("folder", "INBOX")
+
+    if folder == "Sent Messages":
+        return None
+
+    from_addr, from_name = _parse_sender(meta)
+
+    if from_addr in excluded_addrs:
+        log.debug("Skipping excluded sender: %s", from_addr)
+        return None
+
+    uid = meta.get("uid", "")
+    uid_key = f"{folder}:{uid}"
+    if uid_key in extracted_uids:
+        return None
+
+    staged = Path(staged_path) if staged_path else None
+    if not staged or not staged.exists():
+        return None
+    content = staged.read_text(encoding="utf-8", errors="replace")
+
+    subject = meta.get("subject", "(no subject)")
+
+    body_preview = content[:500]
+    if is_promotional(subject, body_preview):
+        log.debug("Skipping promotional email: %s", subject[:50])
+        extracted_uids[uid_key] = {"status": "promo_skipped", "at": _now()}
+        return None
+
+    result = call_llm_extract(content)
+    if not result:
+        extracted_uids[uid_key] = {"status": "llm_failed", "at": _now()}
+        return None
+
+    if not result.get("has_actionable_items"):
+        extracted_uids[uid_key] = {"status": "no_actions", "at": _now()}
+        return None
+
+    todos = []
+    for todo in result.get("todos", []):
+        todo_entry = {
+            "title": todo.get("title", "").strip(),
+            "priority": todo.get("priority", "medium"),
+            "details": todo.get("details", ""),
+            "due_date": todo.get("due_date"),
+            "requested_by": todo.get("requested_by", from_name),
+            "source": "email",
+            "source_email": from_addr,
+            "source_name": from_name,
+            "email_subject": subject,
+            "email_uid": uid_key,
+            "email_date": meta.get("date", ""),
+            "added_at": _now(),
+        }
+        if todo_entry["title"]:
+            todos.append(todo_entry)
+
+    extracted_uids[uid_key] = {
+        "status": "extracted",
+        "todo_count": len(result.get("todos", [])),
+        "at": _now(),
+    }
+    return todos
+
+
+def _process_email_rows(rows, excluded_addrs, extracted_uids):
+    """Process email rows and return extracted TODOs."""
+    all_todos: list[dict[str, Any]] = []
+    for row in rows:
+        todos = _extract_todos_from_row(row, excluded_addrs, extracted_uids)
+        if todos:
+            all_todos.extend(todos)
+    return all_todos
+
+
 def extract_todos_from_emails(
     rows: list[dict[str, Any]],
     dry_run: bool = False,
@@ -195,7 +284,6 @@ def extract_todos_from_emails(
         return []
 
     llm_config = get_llm_config()
-
     if not llm_config.api_key:
         log.warning("No LLM_API_KEY available, skipping TODO extraction")
         return []
@@ -205,95 +293,8 @@ def extract_todos_from_emails(
     state = load_state()
     extracted_uids = state.setdefault("extracted_uids", {})
 
-    all_todos: list[dict[str, Any]] = []
+    all_todos = _process_email_rows(rows, excluded_addrs, extracted_uids)
 
-    for row in rows:
-        meta = row.get("meta", {})
-        staged_path = row.get("staged", "")
-        folder = row.get("folder", "INBOX")
-
-        # Skip sent mail (we wrote it, no action needed from us)
-        if folder == "Sent Messages":
-            continue
-
-        # Get sender
-        from_raw = meta.get("from", "")
-        from_addr = ""
-        email_match = re.search(r"<([^>]+)>", from_raw)
-        if email_match:
-            from_addr = email_match.group(1).lower().strip()
-        else:
-            from_addr = from_raw.lower().strip()
-
-        from_name = ""
-        name_match = re.match(r'["\']?(.+?)["\']?\s*<', from_raw)
-        if name_match:
-            from_name = name_match.group(1).strip().strip('"').strip("'")
-        else:
-            from_name = from_addr.split("@")[0]
-
-        # Skip excluded senders
-        if from_addr in excluded_addrs:
-            log.debug("Skipping excluded sender: %s", from_addr)
-            continue
-
-        # Check UID dedup
-        uid = meta.get("uid", "")
-        uid_key = f"{folder}:{uid}"
-        if uid_key in extracted_uids:
-            continue
-
-        # Read staged file content
-        staged = Path(staged_path) if staged_path else None
-        if not staged or not staged.exists():
-            continue
-        content = staged.read_text(encoding="utf-8", errors="replace")
-
-        subject = meta.get("subject", "(no subject)")
-
-        # Skip promotional emails
-        body_preview = content[:500]
-        if is_promotional(subject, body_preview):
-            log.debug("Skipping promotional email: %s", subject[:50])
-            extracted_uids[uid_key] = {"status": "promo_skipped", "at": _now()}
-            continue
-
-        # Call LLM
-        result = call_llm_extract(content)
-        if not result:
-            extracted_uids[uid_key] = {"status": "llm_failed", "at": _now()}
-            continue
-
-        if not result.get("has_actionable_items"):
-            extracted_uids[uid_key] = {"status": "no_actions", "at": _now()}
-            continue
-
-        # Collect TODOs
-        for todo in result.get("todos", []):
-            todo_entry = {
-                "title": todo.get("title", "").strip(),
-                "priority": todo.get("priority", "medium"),
-                "details": todo.get("details", ""),
-                "due_date": todo.get("due_date"),
-                "requested_by": todo.get("requested_by", from_name),
-                "source": "email",
-                "source_email": from_addr,
-                "source_name": from_name,
-                "email_subject": subject,
-                "email_uid": uid_key,
-                "email_date": meta.get("date", ""),
-                "added_at": _now(),
-            }
-            if todo_entry["title"]:
-                all_todos.append(todo_entry)
-
-        extracted_uids[uid_key] = {
-            "status": "extracted",
-            "todo_count": len(result.get("todos", [])),
-            "at": _now(),
-        }
-
-    # Save state
     state["last_extraction"] = _now()
     save_state(state)
 

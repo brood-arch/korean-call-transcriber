@@ -244,6 +244,126 @@ def update_counterparty_index(new_counterparties: set[str]):
 
 
 # ── 메인 ──────────────────────────────────────────────────────────
+def _scan_source_files(source_files, processed, args, key_counts):
+    """Scan and parse source files, return parsed list and skip counts."""
+    parsed_files = []
+    skipped_existing = 0
+    skipped_parse = 0
+    skipped_short = 0
+    for f in source_files:
+        if not args.all and f.name in processed:
+            skipped_existing += 1
+            continue
+        parsed = parse_filename(f.name)
+        if not parsed:
+            skipped_parse += 1
+            continue
+        try:
+            size = f.stat().st_size
+        except OSError as exc:
+            log.debug("Failed to stat source file %s: %s", f, exc)
+            continue
+        if size < MIN_CONTENT_LENGTH:
+            skipped_short += 1
+            continue
+        key = (parsed["date"], parsed["counterparty"] or parsed["phone"])
+        parsed_files.append((f, parsed, key))
+        key_counts[key] += 1
+    return parsed_files, skipped_existing, skipped_parse, skipped_short
+
+
+def _process_parsed_files(parsed_files, key_counts, args):
+    """Process parsed files: write markdown, update indexes."""
+    key_index = defaultdict(int)
+    new_counterparties = set()
+    processed_count = 0
+    errors = []
+    processed_updates = {}
+    for src_file, parsed, key in parsed_files:
+        try:
+            content = read_source(src_file)
+            if len(content.strip()) < MIN_CONTENT_LENGTH:
+                continue
+            has_duplicates = key_counts[key] > 1
+            key_index[key] += 1
+            cp = parsed["counterparty"] or parsed["phone"]
+            safe_cp = sanitize_filename(cp)
+            date = parsed["date"]
+            if has_duplicates:
+                time_compact = parsed["datetime"].strftime("%H%M")
+                md_filename = f"{date}_{time_compact}_{safe_cp}.md"
+            else:
+                md_filename = f"{date}_{safe_cp}.md"
+            md_path = TRANSCRIPTS_DIR / md_filename
+            md_content = build_markdown(parsed, content, src_file)
+            if args.dry_run:
+                log.info("  📄 %s → %s", src_file.name, md_filename)
+            else:
+                safe_write_text(md_path, md_content)
+            if parsed["counterparty"]:
+                if not args.dry_run:
+                    update_counterparty_file(parsed["counterparty"], md_filename, date)
+                new_counterparties.add(parsed["counterparty"])
+            processed_updates[src_file.name] = {
+                "output": md_filename,
+                "date": date,
+                "counterparty": parsed["counterparty"],
+                "processed_at": datetime.now().isoformat(),
+            }
+            processed_count += 1
+        except Exception as e:
+            errors.append(f"{src_file.name}: {e}")
+    return processed_count, new_counterparties, errors, processed_updates
+
+
+def _log_summary(args, processed_count, skipped_existing, skipped_parse, skipped_short, new_cps, errors):
+    """Print final sync summary."""
+    log.info("\n%s", "=" * 50)
+    log.info("✅ 처리 완료: %d개", processed_count)
+    if skipped_existing:
+        log.info("⏭️  이미 처리됨: %d개", skipped_existing)
+    if skipped_parse:
+        log.info("⚠️  파싱 실패: %d개", skipped_parse)
+    if skipped_short:
+        log.info("📝 내용 부족(<%d자): %d개", MIN_CONTENT_LENGTH, skipped_short)
+    if new_cps:
+        log.info("🏢 거래처: %d개 (신규 가능성)", len(new_cps))
+    if errors:
+        log.error("❌ 오류: %d개", len(errors))
+        for e in errors[:10]:
+            log.info("   %s", e)
+    if args.dry_run:
+        log.info("\n💨 dry-run 모드 — 실제 저장 안 함")
+
+
+def _run_sync(args):
+    """Core sync logic."""
+    TRANSCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
+    state = {} if args.all else load_state()
+    processed = state.get("processed", {})
+    source_files = sorted(SOURCE_DIR.glob("*.txt"))
+    log.info("📂 소스 파일: %d개", len(source_files))
+
+    key_counts = defaultdict(int)
+    parsed_files, skipped_existing, skipped_parse, skipped_short = _scan_source_files(
+        source_files, processed, args, key_counts,
+    )
+
+    processed_count, new_cps, errors, proc_updates = _process_parsed_files(
+        parsed_files, key_counts, args,
+    )
+    processed.update(proc_updates)
+
+    if new_cps and not args.dry_run:
+        update_counterparty_index(new_cps)
+
+    if not args.dry_run:
+        state["processed"] = processed
+        save_state(state)
+
+    _log_summary(args, processed_count, skipped_existing, skipped_parse, skipped_short, new_cps, errors)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="G드라이브 전사본 → Obsidian 동기화"
@@ -254,140 +374,11 @@ def main():
                         help="실제 저장 없이 결과만 출력")
     args = parser.parse_args()
 
-    # 디렉토리 확인
     if not SOURCE_DIR.exists():
-        print(f"❌ 소스 디렉토리 없음: {SOURCE_DIR}")
+        log.info("❌ 소스 디렉토리 없음: %s", SOURCE_DIR)
         sys.exit(1)
 
-    TRANSCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
-
-    # 상태 로드
-    state = {} if args.all else load_state()
-    processed = state.get("processed", {})
-
-    # 소스 파일 스캔
-    source_files = sorted(SOURCE_DIR.glob("*.txt"))
-    total = len(source_files)
-    print(f"📂 소스 파일: {total}개")
-
-    skipped_existing = 0
-    skipped_parse = 0
-    skipped_short = 0
-
-    # 먼저 모든 파일의 파싱 결과를 수집하여 카운트
-    parsed_files = []
-    for f in source_files:
-        if not args.all and f.name in processed:
-            skipped_existing += 1
-            continue
-
-        parsed = parse_filename(f.name)
-        if not parsed:
-            skipped_parse += 1
-            continue
-
-        # 내용 길이 체크
-        try:
-            size = f.stat().st_size
-        except OSError as exc:
-            log.debug("Failed to stat source file %s: %s", f, exc)
-            continue
-
-        if size < MIN_CONTENT_LENGTH:
-            skipped_short += 1
-            continue
-
-        key = (parsed["date"], parsed["counterparty"] or parsed["phone"])
-        parsed_files.append((f, parsed, key))
-
-    # 날짜+거래처별로 정렬하여 카운트
-    key_counts = defaultdict(int)
-    for _, _, key in parsed_files:
-        key_counts[key] += 1
-
-    # 실제 처리
-    key_index = defaultdict(int)
-    new_counterparties = set()
-    processed_count = 0
-    errors = []
-
-    for src_file, parsed, key in parsed_files:
-        try:
-            content = read_source(src_file)
-            if len(content.strip()) < MIN_CONTENT_LENGTH:
-                skipped_short += 1
-                continue
-
-            # 파일명 결정: 같은 key에 여러 파일이면 시간 포함
-            has_duplicates = key_counts[key] > 1
-            key_index[key] += 1
-
-            cp = parsed["counterparty"] or parsed["phone"]
-            safe_cp = sanitize_filename(cp)
-            date = parsed["date"]
-
-            if has_duplicates:
-                time_compact = parsed["datetime"].strftime("%H%M")
-                md_filename = f"{date}_{time_compact}_{safe_cp}.md"
-            else:
-                md_filename = f"{date}_{safe_cp}.md"
-
-            md_path = TRANSCRIPTS_DIR / md_filename
-
-            # 마크다운 생성
-            md_content = build_markdown(parsed, content, src_file)
-
-            if args.dry_run:
-                print(f"  📄 {src_file.name} → {md_filename}")
-            else:
-                safe_write_text(md_path, md_content)
-
-            # 거래처 인덱스 업데이트
-            if parsed["counterparty"]:
-                if not args.dry_run:
-                    update_counterparty_file(
-                        parsed["counterparty"], md_filename, date
-                    )
-                new_counterparties.add(parsed["counterparty"])
-
-            # 상태 기록
-            processed[src_file.name] = {
-                "output": md_filename,
-                "date": date,
-                "counterparty": parsed["counterparty"],
-                "processed_at": datetime.now().isoformat(),
-            }
-            processed_count += 1
-
-        except Exception as e:
-            errors.append(f"{src_file.name}: {e}")
-
-    # 거래처 인덱스 업데이트
-    if new_counterparties and not args.dry_run:
-        update_counterparty_index(new_counterparties)
-
-    # 상태 저장
-    if not args.dry_run:
-        state["processed"] = processed
-        save_state(state)
-
-    # 결과 출력
-    print(f"\n{'='*50}")
-    print(f"✅ 처리 완료: {processed_count}개")
-    if skipped_existing:
-        print(f"⏭️  이미 처리됨: {skipped_existing}개")
-    if skipped_parse:
-        print(f"⚠️  파싱 실패: {skipped_parse}개")
-    if skipped_short:
-        print(f"📝 내용 부족(<{MIN_CONTENT_LENGTH}자): {skipped_short}개")
-    if new_counterparties:
-        print(f"🏢 거래처: {len(new_counterparties)}개 (신규 가능성)")
-    if errors:
-        log.error(f"❌ 오류: {len(errors)}개")
-        for e in errors[:10]:
-            print(f"   {e}")
-    if args.dry_run:
-        print("\n💨 dry-run 모드 — 실제 저장 안 함")
+    _run_sync(args)
 
 
 if __name__ == "__main__":

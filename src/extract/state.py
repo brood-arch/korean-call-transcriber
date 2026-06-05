@@ -84,7 +84,15 @@ def save_checkpoint(checkpoint_file: Path, batch_idx: int, total: int, stats: di
     safe_save_json(checkpoint_file, data, origin="integrated_pipeline")
 
 
-def save_batch_result(state_dir: Path, batch_idx: int, batch_files: list, results: list, errors: list, status: str, run_id: str):
+def save_batch_result(
+    state_dir: Path,
+    batch_idx: int,
+    batch_files: list,
+    results: list,
+    errors: list,
+    status: str,
+    run_id: str,
+):
     """Save batch result to a JSON file."""
     output = {
         "batch_index": batch_idx,
@@ -178,7 +186,11 @@ def load_notification_state(notification_state_file: Path) -> dict:
         try:
             state = json.loads(notification_state_file.read_text(encoding="utf-8"))
         except Exception as exc:
-            log.debug("Failed to load notification state %s: %s", notification_state_file, redact_sensitive_text(repr(exc)))
+            log.debug(
+                "Failed to load notification state %s: %s",
+                notification_state_file,
+                redact_sensitive_text(repr(exc)),
+            )
             state = {}
     state.setdefault("notified_todos", {})
     state.setdefault("notified_appointments", {})
@@ -202,13 +214,24 @@ def collect_new_appointments(batch_results: list[dict], notification_state: dict
         stem = normalize_source(result.get("file", ""))
         ctx = parse_call_context(stem)
         for appt in result.get("appointments", []):
-            appt_entry = {**appt, "source": stem, "counterparty": ctx.get("caller", ""), "phone": ctx.get("phone", ""), "called_at": ctx.get("called_at", "")}
+            appt_entry = {
+                **appt,
+                "source": stem,
+                "counterparty": ctx.get("caller", ""),
+                "phone": ctx.get("phone", ""),
+                "called_at": ctx.get("called_at", ""),
+            }
             if appointment_key(appt_entry) not in prev_notified:
                 new_appointments.append(appt_entry)
     return new_appointments
 
 
-def track_notified(notification_state_file: Path, new_todos: list, new_appointments: list, notifications: list | None = None):
+def track_notified(
+    notification_state_file: Path,
+    new_todos: list,
+    new_appointments: list,
+    notifications: list | None = None,
+):
     """Persist notified_todos/notified_appointments in shared state."""
     try:
         state = load_notification_state(notification_state_file)
@@ -273,6 +296,63 @@ def send_telegram(text: str):
         return _Result()
 
 
+def _build_todo_msg_lines(todos, _fmt_phone, _fmt_date):
+    """Build notification lines for a list of TODOs."""
+    lines = []
+    for t in todos:
+        priority_icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(t.get("priority"), "")
+        title = t.get("title", "")
+        cp = t.get("counterparty") or ""
+        phone = t.get("phone") or ""
+        called = t.get("called_at") or ""
+        src_parts = []
+        if cp and cp != "알 수 없음":
+            src_parts.append(f"{cp} ({_fmt_phone(phone)})" if phone else cp)
+        if called:
+            src_parts.append(_fmt_date(called))
+        src = " / ".join(src_parts)
+        lines.append(f"  {priority_icon} {title}")
+        if src:
+            lines.append(f"    • 통화: {src}")
+    return lines
+
+
+def _build_appointment_msg_lines(new_appointments):
+    """Build notification lines for appointments."""
+    lines = ["", "📅 새 스케줄"]
+    for a in new_appointments[:5]:
+        date_str = a.get("date") or "미정"
+        time_str = a.get("time") or ""
+        cp = a.get("counterparty") or ""
+        src = f" / {cp}" if cp and cp != "알 수 없음" else ""
+        lines.append(f"  - {a.get('title')} / {date_str} {time_str}{src}")
+    return lines
+
+
+def _build_notification_body(new_todos, new_appointments, active_todos, _fmt_phone, _fmt_date):
+    """Build the full notification message lines."""
+    msg_lines = []
+
+    if new_todos:
+        msg_lines.append("🆕 새 TODO")
+        msg_lines.extend(_build_todo_msg_lines(new_todos[:8], _fmt_phone, _fmt_date))
+
+    if new_todos and active_todos:
+        new_titles = {normalize_title(t.get("title", "")) for t in new_todos}
+        existing = [t for t in active_todos if normalize_title(t.get("title", "")) not in new_titles]
+        if existing:
+            msg_lines.append("")
+            msg_lines.append(f"📋 미완료 TODO ({len(existing)}건)")
+            msg_lines.extend(_build_todo_msg_lines(existing[:10], _fmt_phone, _fmt_date))
+            if len(existing) > 10:
+                msg_lines.append(f"  ... 외 {len(existing) - 10}건")
+
+    if new_appointments:
+        msg_lines.extend(_build_appointment_msg_lines(new_appointments))
+
+    return msg_lines
+
+
 def notify_new_items(new_todos: list, new_appointments: list | None = None, active_todos: list | None = None) -> list:
     """Notify about new TODOs/appointments; include active TODO backlog with new TODO alerts."""
     def _fmt_phone(p):
@@ -293,69 +373,23 @@ def notify_new_items(new_todos: list, new_appointments: list | None = None, acti
 
     new_appointments = new_appointments or []
     active_todos = active_todos or []
-    notes = []
-    msg_lines = []
 
-    if new_todos:
-        msg_lines.append("🆕 새 TODO")
-        for t in new_todos[:8]:
-            priority_icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(t.get("priority"), "")
-            title = t.get("title", "")
-            cp = t.get("counterparty") or ""
-            phone = t.get("phone") or ""
-            called = t.get("called_at") or ""
-            src_parts = []
-            if cp and cp != "알 수 없음":
-                src_parts.append(f"{cp} ({_fmt_phone(phone)})" if phone else cp)
-            if called:
-                src_parts.append(_fmt_date(called))
-            src = " / ".join(src_parts)
-            msg_lines.append(f"  {priority_icon} {title}")
-            if src:
-                msg_lines.append(f"    • 통화: {src}")
-
-    if new_todos and active_todos:
-        new_titles = {normalize_title(t.get("title", "")) for t in new_todos}
-        existing = [t for t in active_todos if normalize_title(t.get("title", "")) not in new_titles]
-        if existing:
-            msg_lines.append("")
-            msg_lines.append(f"📋 미완료 TODO ({len(existing)}건)")
-            for t in existing[:10]:
-                priority_icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(t.get("priority"), "")
-                title = t.get("title", "")
-                cp = t.get("counterparty") or ""
-                phone = t.get("phone") or ""
-                called = t.get("called_at") or ""
-                src_parts = []
-                if cp and cp != "알 수 없음":
-                    src_parts.append(f"{cp} ({_fmt_phone(phone)})" if phone else cp)
-                if called:
-                    src_parts.append(_fmt_date(called))
-                src = " / ".join(src_parts)
-                msg_lines.append(f"  {priority_icon} {title}")
-                if src:
-                    msg_lines.append(f"    • 통화: {src}")
-            if len(existing) > 10:
-                msg_lines.append(f"  ... 외 {len(existing) - 10}건")
-
-    if new_appointments:
-        msg_lines.append("")
-        msg_lines.append("📅 새 스케줄")
-        for a in new_appointments[:5]:
-            date_str = a.get("date") or "미정"
-            time_str = a.get("time") or ""
-            cp = a.get("counterparty") or ""
-            src = f" / {cp}" if cp and cp != "알 수 없음" else ""
-            msg_lines.append(f"  - {a.get('title')} / {date_str} {time_str}{src}")
-
+    msg_lines = _build_notification_body(new_todos, new_appointments, active_todos, _fmt_phone, _fmt_date)
     if not msg_lines:
         return []
 
     result = send_telegram("\n".join(msg_lines))
     ok = result.returncode == 0
-    notes.append({"kind": "new_items", "ok": ok})
+    notes = [{"kind": "new_items", "ok": ok}]
     if not ok:
-        log.warning(f"telegram notification failed: {redact_sensitive_text(getattr(result, 'stderr', '') or getattr(result, 'stdout', ''))}")
+        stderr_or_stdout = (
+            getattr(result, 'stderr', '')
+            or getattr(result, 'stdout', '')
+        )
+        log.warning(
+            f"telegram notification failed:"
+            f" {redact_sensitive_text(stderr_or_stdout)}"
+        )
     return notes
 
 
@@ -368,9 +402,9 @@ def print_todo_alert():
             capture_output=True, text=True, timeout=10, cwd=str(WORKSPACE),
         )
         if result.stdout:
-            print(f"\n{'='*50}")
-            print("🚨 신규 TODO 발생 — 전체 활성 할 일:")
-            print(f"{'='*50}")
-            print(result.stdout)
+            log.info(f"\n{'='*50}")
+            log.info("🚨 신규 TODO 발생 — 전체 활성 할 일:")
+            log.info(f"{'='*50}")
+            log.info(result.stdout)
     except Exception as e:
         log.warning(f"todo alert failed: {redact_sensitive_text(str(e))}")

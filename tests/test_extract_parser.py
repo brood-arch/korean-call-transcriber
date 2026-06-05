@@ -25,7 +25,11 @@ def test_invalid_json_returns_parse_error():
 
 
 def test_todo_validation_normalizes_bad_enums():
-    result = parse_unified_response('{"todos":[{"title":"Do it","owner":"other","priority":"urgent","status":"weird"}]}')
+    result = parse_unified_response(
+        '{"todos":[{"title":"Do it",'
+        '"owner":"other","priority":"urgent",'
+        '"status":"weird"}]}'
+    )
     todo = result["todos"][0]
     assert todo["owner"] == "unknown"
     assert todo["priority"] == "medium"
