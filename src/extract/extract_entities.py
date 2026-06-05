@@ -1,4 +1,7 @@
-"""Entity Extraction Pipeline — Standalone module.
+"""DEPRECATED: This module is superseded by extract_all.py (integrated pipeline).
+Do not add new features here.  Kept only for historical reference.
+
+Entity Extraction Pipeline — Standalone module.
 
 Extracts entities and relations from transcription files using LLM.
 

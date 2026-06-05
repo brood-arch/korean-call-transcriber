@@ -6,7 +6,7 @@ Thank you for your interest! Here's how to contribute.
 
 1. Fork and clone the repo
 2. Create a virtual environment: `python -m venv venv`
-3. Install dependencies: `pip install -r requirements.txt`
+3. Install dependencies: `pip install -e ".[dev]"`
 4. Copy `.env.example` to `.env` and fill in required values
 
 ## Code Style

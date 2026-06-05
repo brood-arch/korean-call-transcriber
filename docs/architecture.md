@@ -1,4 +1,4 @@
-# Architecture
+# Architecture (v0.9.1)
 
 This repository contains a Korean call transcription pipeline with multiple stages:
 
@@ -10,7 +10,7 @@ audio files
   -> TODO, schedule, and entity extraction
   -> optional Obsidian/wiki export and recovery queue analysis
 
-extended sources (v0.9.0):
+extended sources (v0.9.1):
   SMS messages  -> normalize -> extract TODOs
   Gmail inbox   -> classify  -> extract TODOs
   Naver Mail    -> IMAP archive -> extract TODOs
@@ -42,16 +42,18 @@ pipeline health:
 
 Runtime paths and credentials are configured with environment variables. Copy `.env.example` to `.env` for local development and set only the values needed for your environment.
 
-The code defaults to local relative directories:
+The code defaults to vendor-neutral values:
 
-- `data/audio`
-- `output/transcripts`
-- `state`
-- `logs`
+- `LLM_BASE_URL`: `https://api.openai.com/v1`
+- `LLM_MODEL`: `gpt-4o-mini`
+- `KCT_AUDIO_DIR`: `data/audio`
+- `KCT_TRANSCRIPT_DIR`: `output/transcripts`
+- `KCT_STATE_DIR`: `state`
+- `KCT_LOG_DIR`: `logs`
 
 Generated data, models, and local credentials are intentionally ignored by Git.
 
-## Extended Pipeline (v0.3.0)
+## Extended Pipeline (v0.9.1)
 
 - `src/integrations/`: external service integrations.
   - `gmail_classifier.py`: auto-classify Gmail inbox (ads → trash, important → highlight).
@@ -60,12 +62,14 @@ Generated data, models, and local credentials are intentionally ignored by Git.
   - `sms_handler.py`: placeholder for SMS-to-transcription pipeline integration.
   - `naver_mail.py`: IMAP-based Naver Mail archiver with structured JSON output.
 - `src/todo/`: persistent TODO management.
-  - `persistent_store.py`: Jaccard fuzzy dedup (≥ 0.55), same-source merge, completed tracking.
+  - `persistent_store.py`: Jaccard fuzzy dedup (≥ 0.55), same-source merge, completed tracking, 14-day retention.
 - `src/knowledge/`: knowledge graph and signal detection.
   - `graph.py`: entity relationship extraction and traversal.
   - `signal_detector.py`: 3-band fast scoring + idea/entity extraction from any text.
 - `src/pipeline/minions_queue.py`: Postgres-backed durable job queue with fan-out, DAG, and crash recovery.
 - `src/pipeline/validate_state.py`: automated state file existence, staleness, and integrity checks.
+- `src/extract/domain_corrections.json`: externalized domain-specific transcription correction rules (5 rules).
+- `src/extract/extract_all.py`: unified extraction — single LLM call per batch for TODO, schedule, entity, product, money, risk, and correction extraction.
 
 ## Recovery Flow
 

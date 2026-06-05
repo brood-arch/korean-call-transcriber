@@ -187,7 +187,6 @@ class IntegratedPipeline:
 
     def _update_stats_from_result(self, result: dict) -> None:
         """추출 성공 결과에서 통계 카운터를 갱신한다."""
-        """Update stats counters from a successful extraction result."""
         if result.get("summary", {}).get("one_line"):
             self.stats["summary"] += 1
         self.stats["todos"] += len(result.get("todos", []))
@@ -200,7 +199,6 @@ class IntegratedPipeline:
 
     def _notify_batch(self, batch_results: list[dict], batch_ok_stems: list[str]) -> None:
         """배치 결과에 대해 알림을 발송하고 TODO를 동기화한다."""
-        """Send notifications for batch results."""
         new_todo_count, new_todos = sync_todos_to_persistent(batch_results, self.run_id)
         self._last_new_todos = new_todos
         self.stats["new_todos"] = self.stats.get("new_todos", 0) + new_todo_count
@@ -252,7 +250,6 @@ class IntegratedPipeline:
 
     def _print_final_summary(self, total_batches: int) -> None:
         """최종 실행 요약을 로그로 출력한다."""
-        """Print the final run summary."""
         log.info("\n" + "=" * 60)
         log.info("INTEGRATED EXTRACTION COMPLETE")
         log.info("=" * 60)
@@ -277,7 +274,6 @@ class IntegratedPipeline:
 
     def _resolve_start_batch(self, total_batches: int) -> int:
         """시작 배치 인덱스를 결정한다."""
-        """Determine starting batch index."""
         if self.today_only:
             start_batch = self.start_batch_override
             log.info("--today mode: always starting from batch %d (checkpoint ignored for batch index)", start_batch)
@@ -292,7 +288,6 @@ class IntegratedPipeline:
 
     def _should_skip_batch(self, batch_idx: int) -> bool:
         """해당 배치가 이미 처리되었는지 확인한다."""
-        """Check if a batch was already processed (non-today mode only)."""
         if self.today_only:
             return False
         batch_file = self.state_dir / f"batch_{batch_idx:04d}.json"
@@ -307,7 +302,6 @@ class IntegratedPipeline:
 
     def _process_batch(self, batch_idx: int, total_batches: int, batch_files: list[Path], api_key: str) -> None:
         """단일 배치의 파일들을 파이프라인으로 처리한다."""
-        """Process a single batch of files through the pipeline."""
         log.info("  [%04d/%04d] Processing %d files...", batch_idx, total_batches - 1, len(batch_files))
 
         batch_results = []

@@ -1,4 +1,7 @@
-"""Schedule Extractor — Extract appointments, deadlines, and todos from transcriptions.
+"""DEPRECATED: This module is superseded by extract_all.py (integrated pipeline).
+Do not add new features here.  Kept only for historical reference.
+
+Schedule Extractor — Extract appointments, deadlines, and todos from transcriptions.
 
 Uses ChromaDB RAG to find schedule-relevant transcripts, then LLM to extract structured data.
 

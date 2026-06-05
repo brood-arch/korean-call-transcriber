@@ -206,7 +206,6 @@ def save_notification_state(notification_state_file: Path, state: dict) -> None:
 
 def collect_new_appointments(batch_results: list[dict], notification_state: dict) -> list[dict]:
     """아직 알림을 보내지 않은 약속 목록을 수집한다."""
-    """Collect appointments not yet notified."""
     prev_notified = set(notification_state.get("notified_appointments", {}).keys())
     new_appointments = []
     for result in batch_results:
