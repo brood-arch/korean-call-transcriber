@@ -135,13 +135,13 @@ See `pyproject.toml` `[project.optional-dependencies]` for available extras.
 
 ```bash
 # Transcribe all pending files
-python -m src.transcribe.batch_transcribe
+python -m kct.transcribe.batch_transcribe
 
 # Transcribe a single file
-python -m src.transcribe.batch_transcribe --file path/to/audio.m4a
+python -m kct.transcribe.batch_transcribe --file path/to/audio.m4a
 
 # Process newest files first
-python -m src.transcribe.batch_transcribe --recent-first --limit 10
+python -m kct.transcribe.batch_transcribe --recent-first --limit 10
 
 # Equivalent installed CLI
 kct-transcribe --recent-first --limit 10
@@ -151,13 +151,13 @@ kct-transcribe --recent-first --limit 10
 
 ```bash
 # Full extraction run (summary + todos + entities + ...)
-python -m src.extract.extract_all
+python -m kct.extract.extract_all
 
 # Dry run to validate setup
-python -m src.extract.extract_all --dry-run
+python -m kct.extract.extract_all --dry-run
 
 # Process only today's files
-python -m src.extract.extract_all --today
+python -m kct.extract.extract_all --today
 
 # Equivalent installed CLI
 kct-extract --today
@@ -167,10 +167,10 @@ kct-extract --today
 
 ```bash
 # Check for gaps in the pipeline
-python -m src.queue.gap_analyzer
+python -m kct.queue.gap_analyzer
 
 # Generate detailed report
-python -m src.queue.gap_analyzer --output-json report.json --output-md report.md
+python -m kct.queue.gap_analyzer --output-json report.json --output-md report.md
 
 # Pipeline health shortcut
 kct-health
@@ -180,13 +180,13 @@ kct-health
 
 ```bash
 # Sync new transcripts
-python -m src.sync.sync_obsidian
+python -m kct.sync.sync_obsidian
 
 # Dry run
-python -m src.sync.sync_obsidian --dry-run
+python -m kct.sync.sync_obsidian --dry-run
 
 # Re-sync all files
-python -m src.sync.sync_obsidian --all
+python -m kct.sync.sync_obsidian --all
 
 # Equivalent installed CLI
 kct-sync-obsidian --all
@@ -196,23 +196,23 @@ kct-sync-obsidian --all
 
 ```bash
 # Set GMAIL_ADDRESS and GMAIL_APP_PASSWORD in .env first
-python -m src.integrations.gmail_classifier
+python -m kct.integrations.gmail_classifier
 ```
 
 #### 6. Email TODO extraction
 
 ```bash
 # Manage sender exclusion list
-python -m src.integrations.email_todo_extract exclude "newsletter@example.com"
-python -m src.integrations.email_todo_extract list-exclusions
-python -m src.integrations.email_todo_extract status
+python -m kct.integrations.email_todo_extract exclude "newsletter@example.com"
+python -m kct.integrations.email_todo_extract list-exclusions
+python -m kct.integrations.email_todo_extract status
 ```
 
 #### 7. Calendar integration
 
 ```bash
 # Set GCAL_TOKEN_PATH in .env to your OAuth2 token file
-python -m src.integrations.calendar
+python -m kct.integrations.calendar
 ```
 
 #### 7.5. Naver Mail archiving
@@ -220,69 +220,69 @@ python -m src.integrations.calendar
 ```bash
 # Set NAVER_MAIL_ADDRESS and NAVER_MAIL_PASSWORD in .env first
 # Enable IMAP in Naver Mail web settings
-python -m src.integrations.naver_mail
+python -m kct.integrations.naver_mail
 
 # Dry run (don't save state)
-python -m src.integrations.naver_mail --dry-run
+python -m kct.integrations.naver_mail --dry-run
 
 # Single folder
-python -m src.integrations.naver_mail --folder INBOX --limit 50
+python -m kct.integrations.naver_mail --folder INBOX --limit 50
 ```
 
 #### 8. Persistent TODO management
 
 ```bash
 # Check status
-python -m src.todo.persistent_store status
+python -m kct.todo.persistent_store status
 
 # Sync completed TODOs
-python -m src.todo.persistent_store sync
+python -m kct.todo.persistent_store sync
 ```
 
 #### 9. Knowledge graph
 
 ```bash
 # Build graph from all state sources
-python -m src.knowledge.graph --build
+python -m kct.knowledge.graph --build
 
 # Query related nodes
-python -m src.knowledge.graph --query "cp:CompanyName"
+python -m kct.knowledge.graph --query "cp:CompanyName"
 
 # Show statistics
-python -m src.knowledge.graph --stats
+python -m kct.knowledge.graph --stats
 ```
 
 #### 10. Signal detection
 
 ```bash
 # Fast-score a text (no LLM needed)
-python -m src.knowledge.signal_detector --score "주문 500개 확인해주세요"
+python -m kct.knowledge.signal_detector --score "주문 500개 확인해주세요"
 
 # Full signal detection
-python -m src.knowledge.signal_detector "Meeting with Acme about 500 units"
+python -m kct.knowledge.signal_detector "Meeting with Acme about 500 units"
 ```
 
 #### 11. Minions job queue (requires PostgreSQL)
 
 ```bash
 # Set MINIONS_DB_PASS in .env
-python -m src.pipeline.minions_queue submit sync_transcripts '{"cmd": "python -m src.extract.extract_all"}'
-python -m src.pipeline.minions_queue list
-python -m src.pipeline.minions_queue stats
-python -m src.pipeline.minions_queue work
+python -m kct.pipeline.minions_queue submit sync_transcripts '{"cmd": "python -m kct.extract.extract_all"}'
+python -m kct.pipeline.minions_queue list
+python -m kct.pipeline.minions_queue stats
+python -m kct.pipeline.minions_queue work
 ```
 
 #### 12. State validation
 
 ```bash
 # Check all state files
-python -m src.pipeline.validate_state
+python -m kct.pipeline.validate_state
 
 # JSON output
-python -m src.pipeline.validate_state --json
+python -m kct.pipeline.validate_state --json
 
 # Quiet mode (only show issues)
-python -m src.pipeline.validate_state --quiet
+python -m kct.pipeline.validate_state --quiet
 ```
 
 ### Environment Variables
@@ -330,7 +330,7 @@ Additional operational notes:
 ## Project Structure
 
 ```
-src/
+kct/
 ├── transcribe/          # WhisperX transcription engine
 │   ├── batch_transcribe.py   # Main batch transcription script
 │   ├── worker.py             # Isolated subprocess worker
@@ -413,7 +413,7 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 ## Changelog
 
 ### v0.8.2
-- Refactored `extract_entities.py` and `extract_schedules.py` to use centralized LLM client (`src.extract.client`)
+- Refactored `extract_entities.py` and `extract_schedules.py` to use centralized LLM client (`kct.extract.client`)
 - Added logging to all silent `except` blocks across codebase
 - Added `ffmpeg-python` to core dependencies in pyproject.toml
 - Added `chromadb` and `obsidian` optional dependency groups
@@ -436,11 +436,11 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 - Replaced over-broad module status labels with Stable/Beta/Experimental/Placeholder
 
 ### v0.3.0
-- Added `src/integrations/` — Gmail classifier, email TODO extraction, calendar integration, SMS handler, Naver Mail archiver
-- Added `src/todo/` — Persistent TODO store with Jaccard fuzzy dedup
-- Added `src/knowledge/` — Knowledge graph builder and 3-band signal detector
-- Added `src/pipeline/minions_queue.py` — Postgres-backed durable job queue
-- Added `src/pipeline/validate_state.py` — State file validation
+- Added `kct/integrations/` — Gmail classifier, email TODO extraction, calendar integration, SMS handler, Naver Mail archiver
+- Added `kct/todo/` — Persistent TODO store with Jaccard fuzzy dedup
+- Added `kct/knowledge/` — Knowledge graph builder and 3-band signal detector
+- Added `kct/pipeline/minions_queue.py` — Postgres-backed durable job queue
+- Added `kct/pipeline/validate_state.py` — State file validation
 - All personal data, passwords, and internal paths removed
 
 ### v0.2.0

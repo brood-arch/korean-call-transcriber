@@ -12,7 +12,7 @@ Thank you for your interest! Here's how to contribute.
 ## Code Style
 
 - Python 3.11+ compatible
-- Use `ruff` for linting: `ruff check src/ tests/`
+- Use `ruff` for linting: `ruff check kct/ tests/`
 - English docstrings (Google style)
 - Type hints on public functions
 
@@ -32,7 +32,7 @@ Thank you for your interest! Here's how to contribute.
 
 ## Adding New Integrations
 
-New integrations should go in `src/integrations/`:
+New integrations should go in `kct/integrations/`:
 - Use environment variables for credentials (never hardcode)
 - Add corresponding test in `tests/`
 - Update README.md and docs/architecture.md

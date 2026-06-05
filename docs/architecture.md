@@ -27,15 +27,15 @@ pipeline health:
 
 ## Package Layout
 
-- `src/transcribe/`: batch transcription, worker process, and diarization orchestration.
-- `src/correct/`: transcript correction rules and Korean/English normalization.
-- `src/extract/`: LLM-assisted TODO, schedule, and entity extraction.
-- `src/sync/`: transcript export to an Obsidian-compatible vault.
-- `src/pipeline/`: shared paths, JSON helpers, health checks, state validation, and durable job queue.
-- `src/queue/`: deterministic gap analysis and retry queue generation.
-- `src/knowledge/`: knowledge graph, entity extraction, and signal detection (3-band fast scoring).
-- `src/todo/`: persistent TODO management with Jaccard fuzzy dedup and 14-day retention.
-- `src/integrations/`: external service integrations (Gmail, Naver Mail, Calendar, SMS).
+- `kct/transcribe/`: batch transcription, worker process, and diarization orchestration.
+- `kct/correct/`: transcript correction rules and Korean/English normalization.
+- `kct/extract/`: LLM-assisted TODO, schedule, and entity extraction.
+- `kct/sync/`: transcript export to an Obsidian-compatible vault.
+- `kct/pipeline/`: shared paths, JSON helpers, health checks, state validation, and durable job queue.
+- `kct/queue/`: deterministic gap analysis and retry queue generation.
+- `kct/knowledge/`: knowledge graph, entity extraction, and signal detection (3-band fast scoring).
+- `kct/todo/`: persistent TODO management with Jaccard fuzzy dedup and 14-day retention.
+- `kct/integrations/`: external service integrations (Gmail, Naver Mail, Calendar, SMS).
 - `tests/`: focused regression tests for health checks, gap analysis, retry queue, and correction rules.
 
 ## Configuration
@@ -55,45 +55,45 @@ Generated data, models, and local credentials are intentionally ignored by Git.
 
 ## Extended Pipeline (v0.9.1)
 
-- `src/integrations/`: external service integrations.
+- `kct/integrations/`: external service integrations.
   - `gmail_classifier.py`: auto-classify Gmail inbox (ads → trash, important → highlight).
   - `email_todo_extract.py`: extract action items from incoming emails via LLM.
   - `calendar.py`: Google Calendar event checking via OAuth2.
   - `sms_handler.py`: placeholder for SMS-to-transcription pipeline integration.
   - `naver_mail.py`: IMAP-based Naver Mail archiver with structured JSON output.
-- `src/todo/`: persistent TODO management.
+- `kct/todo/`: persistent TODO management.
   - `persistent_store.py`: Jaccard fuzzy dedup (≥ 0.55), same-source merge, completed tracking, 14-day retention.
-- `src/knowledge/`: knowledge graph and signal detection.
+- `kct/knowledge/`: knowledge graph and signal detection.
   - `graph.py`: entity relationship extraction and traversal.
   - `signal_detector.py`: 3-band fast scoring + idea/entity extraction from any text.
-- `src/pipeline/minions_queue.py`: Postgres-backed durable job queue with fan-out, DAG, and crash recovery.
-- `src/pipeline/validate_state.py`: automated state file existence, staleness, and integrity checks.
-- `src/extract/domain_corrections.json`: externalized domain-specific transcription correction rules (5 rules).
-- `src/extract/extract_all.py`: unified extraction — single LLM call per batch for TODO, schedule, entity, product, money, risk, and correction extraction.
+- `kct/pipeline/minions_queue.py`: Postgres-backed durable job queue with fan-out, DAG, and crash recovery.
+- `kct/pipeline/validate_state.py`: automated state file existence, staleness, and integrity checks.
+- `kct/extract/domain_corrections.json`: externalized domain-specific transcription correction rules (5 rules).
+- `kct/extract/extract_all.py`: unified extraction — single LLM call per batch for TODO, schedule, entity, product, money, risk, and correction extraction.
 
 ## Recovery Flow
 
-`src.queue.gap_analyzer` classifies pipeline gaps into deterministic categories such as missing transcript, diarization failure, extraction pending, index pending, and sync pending.
+`kct.queue.gap_analyzer` classifies pipeline gaps into deterministic categories such as missing transcript, diarization failure, extraction pending, index pending, and sync pending.
 
-`src.queue.retry_queue` converts those gaps into a JSONL queue that can be reviewed or processed by a conservative worker.
+`kct.queue.retry_queue` converts those gaps into a JSONL queue that can be reviewed or processed by a conservative worker.
 
 ## Module Details
 
-### Knowledge Module (`src/knowledge/`)
+### Knowledge Module (`kct/knowledge/`)
 
 - `signal_detector.py`: 3-band fast scoring engine that automatically captures ideas, entities, and actionable signals from any text. Designed for real-time ingestion across all pipeline sources.
 - `graph.py`: entity relationship extraction and traversal for building a local knowledge graph.
 
-### TODO Module (`src/todo/`)
+### TODO Module (`kct/todo/`)
 
 - `persistent_store.py`: Jaccard fuzzy dedup (≥ 0.55 threshold), same-source merge to collapse related action items, completed-item tracking, and 14-day retention policy.
 
-### Queue Module (`src/queue/`)
+### Queue Module (`kct/queue/`)
 
 - `gap_analyzer`: deterministic gap classification for pipeline health auditing.
 - `retry_queue`: JSONL-based retry queue for conservative, reviewable worker processing.
 
-### Pipeline Module (`src/pipeline/`)
+### Pipeline Module (`kct/pipeline/`)
 
 - `health_check`: end-to-end pipeline health verification.
 - `validate_state`: automated state file existence, staleness, and integrity checks with optional auto-fix.

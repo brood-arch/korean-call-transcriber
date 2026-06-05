@@ -51,13 +51,13 @@ cp .env.example .env
 
 ```bash
 # 대기 중인 모든 파일 전사
-python -m src.transcribe.batch_transcribe
+python -m kct.transcribe.batch_transcribe
 
 # 단일 파일 전사
-python -m src.transcribe.batch_transcribe --file path/to/audio.m4a
+python -m kct.transcribe.batch_transcribe --file path/to/audio.m4a
 
 # 최신 파일부터 처리
-python -m src.transcribe.batch_transcribe --recent-first --limit 10
+python -m kct.transcribe.batch_transcribe --recent-first --limit 10
 
 # 설치형 CLI
 kct-transcribe --recent-first --limit 10
@@ -67,13 +67,13 @@ kct-transcribe --recent-first --limit 10
 
 ```bash
 # 전체 추출 실행 (요약 + TODO + 개체명 + ...)
-python -m src.extract.extract_all
+python -m kct.extract.extract_all
 
 # 설정 검증용 드라이 런
-python -m src.extract.extract_all --dry-run
+python -m kct.extract.extract_all --dry-run
 
 # 오늘 파일만 처리
-python -m src.extract.extract_all --today
+python -m kct.extract.extract_all --today
 
 # 설치형 CLI
 kct-extract --today
@@ -83,10 +83,10 @@ kct-extract --today
 
 ```bash
 # 파이프라인 갭 확인
-python -m src.queue.gap_analyzer
+python -m kct.queue.gap_analyzer
 
 # 상세 리포트 생성
-python -m src.queue.gap_analyzer --output-json report.json --output-md report.md
+python -m kct.queue.gap_analyzer --output-json report.json --output-md report.md
 
 # 파이프라인 상태 확인 단축 명령
 kct-health
@@ -96,13 +96,13 @@ kct-health
 
 ```bash
 # 새 전사 결과 동기화
-python -m src.sync.sync_obsidian
+python -m kct.sync.sync_obsidian
 
 # 드라이 런
-python -m src.sync.sync_obsidian --dry-run
+python -m kct.sync.sync_obsidian --dry-run
 
 # 전체 파일 재동기화
-python -m src.sync.sync_obsidian --all
+python -m kct.sync.sync_obsidian --all
 
 # 설치형 CLI
 kct-sync-obsidian --all
@@ -153,7 +153,7 @@ kct-sync-obsidian --all
 ## 프로젝트 구조
 
 ```
-src/
+kct/
 ├── transcribe/          # WhisperX 전사 엔진
 │   ├── batch_transcribe.py   # 배치 전사 메인 스크립트
 │   ├── worker.py             # 격리된 서브프로세스 워커

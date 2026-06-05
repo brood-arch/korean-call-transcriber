@@ -5,7 +5,7 @@
 - Reduce `--batch-size` (default: 8)
 - Use smaller Whisper model: `--model base`
 
-## "Module not found: src.pipeline_utils"
+## "Module not found: kct.pipeline_utils"
 - Ensure you run from repo root
 - Install: `pip install -e ".[dev]"`
 
