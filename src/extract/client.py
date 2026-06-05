@@ -10,6 +10,7 @@ import json
 import logging
 import time
 import warnings as _w
+from typing import Any
 
 from src.config import get_llm_config as _resolve_llm_config
 from src.pipeline.redact import redact_sensitive_text
@@ -74,7 +75,10 @@ def _extract_json_from_text(text: str) -> dict | None:
     return None
 
 
-def _build_llm_request(prompt, config, base_url, model, max_tokens, response_format, timeout):
+def _build_llm_request(
+    prompt: str, config: Any, base_url: str, model: str,
+    max_tokens: int, response_format: bool, timeout: int,
+) -> Any:
     """Build the HTTP request for an OpenAI-compatible LLM call."""
     import urllib.request
 
@@ -138,7 +142,7 @@ def call_llm_json(
     return None, {"error": last_error, "attempts": MAX_RETRIES}
 
 
-def _attempt_llm_call(req, timeout, attempt):
+def _attempt_llm_call(req: Any, timeout: int, attempt: int) -> tuple[dict | None, dict | None, str | None]:
     """Execute one attempt of the LLM call.
 
     Returns (parsed, usage, error_str).
@@ -170,7 +174,7 @@ def _attempt_llm_call(req, timeout, attempt):
     return None, None, "json_extract_failed"
 
 
-def _handle_http_error_attempt(e, attempt):
+def _handle_http_error_attempt(e: Any, attempt: int) -> tuple[None, None, str | None]:
     """Handle HTTPError for a single attempt. Returns (None, None, error_or_break)."""
     status = e.code
     body = ""
@@ -204,7 +208,7 @@ def _handle_http_error_attempt(e, attempt):
     return None, None, f"http_{status}"
 
 
-def _handle_url_error(e, attempt):
+def _handle_url_error(e: Any, attempt: int) -> tuple[None, None, str]:
     """Handle URLError for a single attempt. Returns (None, None, error_str)."""
     wait = RETRY_BACKOFF[min(attempt, len(RETRY_BACKOFF) - 1)]
     log.warning(
@@ -216,7 +220,7 @@ def _handle_url_error(e, attempt):
     return None, None, f"network: {e}"
 
 
-def _simple_retry(error_str, backoff, attempt):
+def _simple_retry(error_str: str, backoff: int, attempt: int) -> tuple[None, None, str]:
     """Sleep and return a retryable error. Returns (None, None, error_str)."""
     if attempt < MAX_RETRIES - 1:
         time.sleep(backoff)

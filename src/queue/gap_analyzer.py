@@ -174,10 +174,10 @@ def load_diarization_failed(log_path: Path) -> set[str]:
 
 
 def _classify_audio_gaps(
-    audio_by_stem, transcript_by_stem,
-    blacklisted_stems, failed_stems, blacklist_entries,
-    cause_files,
-):
+    audio_by_stem: dict[str, Path], transcript_by_stem: dict[str, Path],
+    blacklisted_stems: set[str], failed_stems: set[str], blacklist_entries: dict[str, dict[str, Any]],
+    cause_files: dict[str, list[dict[str, Any]]],
+) -> None:
     """Classify audio files missing transcripts."""
     for stem, audio_path in sorted(audio_by_stem.items()):
         if stem in transcript_by_stem:
@@ -199,10 +199,10 @@ def _classify_audio_gaps(
 
 
 def _classify_postprocess_gaps(
-    transcript_files, audio_by_stem, chroma_basenames,
-    obsidian_processed, integrated_processed,
-    cause_files,
-):
+    transcript_files: list[Path], audio_by_stem: dict[str, Path], chroma_basenames: set[str],
+    obsidian_processed: set[str], integrated_processed: set[str],
+    cause_files: dict[str, list[dict[str, Any]]],
+) -> None:
     """Classify transcript post-processing gaps."""
     for txt in transcript_files:
         canonical = canonical_transcript_stem(txt.stem)
@@ -220,12 +220,15 @@ def _classify_postprocess_gaps(
             cause_files["entity_pending"].append(file_record(txt, "entity_pending", stem=txt.stem))
 
 
-def _audio_path_getter(audio_by_stem):
+def _audio_path_getter(audio_by_stem: dict[str, Path]) -> None:
     """Return a no-op; kept for forward-compat."""
     return None
 
 
-def _classify_diarization_failures(diarization_failed, audio_by_stem, audio_dir, cause_files):
+def _classify_diarization_failures(
+    diarization_failed: set[str], audio_by_stem: dict[str, Path],
+    audio_dir: Path, cause_files: dict[str, list[dict[str, Any]]],
+) -> None:
     """Classify diarization failures."""
     for stem in sorted(diarization_failed):
         path = audio_by_stem.get(stem) or audio_dir / f"{stem}.m4a"
@@ -233,12 +236,12 @@ def _classify_diarization_failures(diarization_failed, audio_by_stem, audio_dir,
 
 
 def _classify_gaps(
-    audio_by_stem, transcript_by_stem, transcript_files,
-    blacklisted_stems, failed_stems, chroma_basenames,
-    obsidian_processed, integrated_processed,
-    diarization_failed, blacklist_entries,
-    audio_dir, audio_path_for,
-):
+    audio_by_stem: dict[str, Path], transcript_by_stem: dict[str, Path], transcript_files: list[Path],
+    blacklisted_stems: set[str], failed_stems: set[str], chroma_basenames: set[str],
+    obsidian_processed: set[str], integrated_processed: set[str],
+    diarization_failed: set[str], blacklist_entries: dict[str, dict[str, Any]],
+    audio_dir: Path, audio_path_for: Path,
+) -> dict[str, list[dict[str, Any]]]:
     """Classify all gaps into cause categories."""
     cause_files: dict[str, list[dict[str, Any]]] = {k: [] for k in CAUSE_ORDER}
 

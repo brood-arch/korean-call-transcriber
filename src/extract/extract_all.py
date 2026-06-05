@@ -57,7 +57,7 @@ def _get_fast_score():
 
             _fast_score_fn = fast_score_transcript
         except ImportError:
-            def default_fast_score(text):
+            def default_fast_score(text: str) -> dict:
                 """fast_score 미가용 시 항상 처리하는 기본 채점 함수."""
                 return {
                     "score": 1.0, "band": "definite_keep",
@@ -81,7 +81,7 @@ DEFAULT_API_DELAY = 5.0          # seconds between API calls (ZAI rate limit saf
 class IntegratedPipeline:
     """Unified extraction pipeline: TODO + Entity + Schedule in one LLM call."""
 
-    def __init__(self, args):
+    def __init__(self, args: argparse.Namespace) -> None:
         self.base_dir = Path(args.base_dir)
         self.state_dir = Path(args.state_dir)
         self.state_dir.mkdir(parents=True, exist_ok=True)

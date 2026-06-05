@@ -90,7 +90,7 @@ def todo_key(title: str, source: str) -> str:
     return f"{normalize_title(title)}|{normalize_source(source)}"
 
 
-def safe_load_json(path, default=None):
+def safe_load_json(path: Path | str, default: dict | list | None = None) -> dict | list | None:
     """JSON 파일을 안전하게 읽고, 파일 없음/JSON 파싱 오류 시 기본값을 반환한다."""
     path = Path(path)
     try:
@@ -99,18 +99,18 @@ def safe_load_json(path, default=None):
         return default
 
 
-def safe_save_json(path, data, origin: str | None = None):
+def safe_save_json(path: Path | str, data: dict | list, origin: str | None = None) -> None:
     """JSON 데이터를 UUID tmp 파일 경유로 atomic write 한다."""
     content = json.dumps(data, ensure_ascii=False, indent=2, default=str)
     safe_write_text(Path(path), content)
 
 
-def safe_read_json(path, default=None):
+def safe_read_json(path: Path | str, default: dict | list | None = None) -> dict | list | None:
     """Compatibility alias for modules that use read/write naming."""
     return safe_load_json(path, default=default)
 
 
-def safe_write_json(path, data, origin: str | None = None):
+def safe_write_json(path: Path | str, data: dict | list, origin: str | None = None) -> None:
     """Compatibility alias for modules that use read/write naming."""
     return safe_save_json(path, data, origin=origin)
 

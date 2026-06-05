@@ -30,6 +30,7 @@ import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import psutil
 
@@ -101,7 +102,7 @@ logging.basicConfig(
 )
 
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
     """CLI 인수를 파싱한다."""
     p = argparse.ArgumentParser(description="Batch transcription with WhisperX")
     p.add_argument("--limit", type=int, default=0, help="Max files to process")
@@ -174,7 +175,7 @@ def kill_gpu_hogs() -> list[str]:
     return killed
 
 
-def get_audio_duration(file) -> float:
+def get_audio_duration(file: Path | str) -> float:
     """Get audio duration in seconds via ffmpeg."""
     import re
     try:
@@ -266,7 +267,10 @@ def parse_caller_info(stem: str) -> tuple[str | None, str | None]:
     return None, None
 
 
-def _score_speaker_mapping(segments, sp0, sp1, dur0, dur1, hon0, hon1, first_sp):
+def _score_speaker_mapping(
+    segments: list[dict], sp0: str, sp1: str,
+    dur0: float, dur1: float, hon0: int, hon1: int, first_sp: str | None,
+) -> int:
     """Compute score for whether sp0 is the caller."""
     score0_is_caller = 0
     if dur0 > dur1 * 1.3:
@@ -284,7 +288,7 @@ def _score_speaker_mapping(segments, sp0, sp1, dur0, dur1, hon0, hon1, first_sp)
     return score0_is_caller
 
 
-def _compute_honorifics(segments, sp):
+def _compute_honorifics(segments: list[dict], sp: str) -> int:
     """Count honorific usage for a speaker."""
     honorifics = ["습니다", "입니다", "하십시오", "드리", "올리", "여쭤", "모시"]
     return sum(
@@ -340,7 +344,7 @@ def map_speakers(segments: list[dict], caller_name: str, caller_phone: str) -> l
 
 # ── Quality metrics ──────────────────────────────────────────────────────
 
-def log_quality(source_name: str, quality_meta: dict, correction_count: int, elapsed: float):
+def log_quality(source_name: str, quality_meta: dict, correction_count: int, elapsed: float) -> None:
     """Append quality metrics to JSONL log."""
     QUALITY_LOG.parent.mkdir(parents=True, exist_ok=True)
     entry = {
@@ -356,7 +360,7 @@ def log_quality(source_name: str, quality_meta: dict, correction_count: int, ela
 
 # ── Transcription engine ────────────────────────────────────────────────
 
-def transcribe_only(audio_path):
+def transcribe_only(audio_path: Path | str) -> tuple[list[dict], float, dict]:
     """Transcribe with faster-whisper only.
 
     Returns (segments, duration, quality_meta).
@@ -377,7 +381,7 @@ def transcribe_only(audio_path):
     except (ImportError, RuntimeError, AttributeError) as _bat_err:  # noqa: BLE001
         log.info("BatchedInferencePipeline unavailable (%s), using sequential mode", _bat_err)
 
-    def _run_transcribe(path, offset=0.0):
+    def _run_transcribe(path: Path | str, offset: float = 0.0) -> tuple[list[dict], Any]:
         if use_batched:
             segs, info = batched_model.transcribe(
                 str(path), batch_size=16, beam_size=5,
@@ -447,7 +451,9 @@ def transcribe_only(audio_path):
     return [{"start": s["start"], "end": s["end"], "text": s["text"]} for s in seg_rows], duration, quality_meta
 
 
-def align_and_diarize_subprocess(audio_path, segments_json, no_diarize=False):
+def align_and_diarize_subprocess(
+    audio_path: Path | str, segments_json: list[dict], no_diarize: bool = False,
+) -> tuple[list[dict] | None, dict]:
     """Run align + diarize in a subprocess to avoid DLL crash.
 
     Calls align_worker.py which imports whisperx in a clean process.
@@ -518,7 +524,10 @@ def align_and_diarize_subprocess(audio_path, segments_json, no_diarize=False):
         }
 
 
-def _write_transcript_output(audio_path, out_path, final_segments, audio_dur, quality_meta, had_diary_fail, t0):
+def _write_transcript_output(
+    audio_path: Path, out_path: Path, final_segments: list[dict],
+    audio_dur: float, quality_meta: dict, had_diary_fail: bool, t0: float,
+) -> bool:
     """Apply corrections, write output, log results. Returns True on success."""
     text = _format_segments_text(final_segments)
     if len(text.strip()) < 10:
@@ -543,7 +552,7 @@ def _write_transcript_output(audio_path, out_path, final_segments, audio_dur, qu
     )
 
 
-def _process_single_audio(audio_path, out_path, args, i, total):
+def _process_single_audio(audio_path: Path, out_path: Path, args: argparse.Namespace, i: int, total: int) -> bool:
     """Process a single audio file through the full pipeline."""
     duration = get_audio_duration(audio_path)
     if duration > MAX_AUDIO_DURATION_SEC:
@@ -566,7 +575,7 @@ def _process_single_audio(audio_path, out_path, args, i, total):
         return False
 
 
-def _prepare_pending_list(args):
+def _prepare_pending_list(args: argparse.Namespace) -> list[Path]:
     """Build the list of pending audio files to transcribe."""
     if args.file:
         f = Path(args.file)
@@ -582,7 +591,7 @@ def _prepare_pending_list(args):
     return pending
 
 
-def _check_gpu_resources(args, gpu_free):
+def _check_gpu_resources(args: argparse.Namespace, gpu_free: int) -> tuple[bool, int]:
     """Check GPU resources and attempt recovery if needed.
 
     Returns (proceed: bool, gpu_free_mb: int).
@@ -601,7 +610,7 @@ def _check_gpu_resources(args, gpu_free):
     return True, gpu_free
 
 
-def _format_segments_text(final_segments):
+def _format_segments_text(final_segments: list[dict]) -> str:
     """Convert segments list to formatted text lines."""
     lines = []
     for seg in final_segments:
@@ -616,7 +625,7 @@ def _format_segments_text(final_segments):
     return "\n".join(lines)
 
 
-def _perform_transcription(audio_path, args):
+def _perform_transcription(audio_path: Path, args: argparse.Namespace) -> tuple[list[dict], float, dict, bool]:
     """Run transcription + align/diarize + speaker mapping for one file.
 
     Returns (final_segments, audio_dur, quality_meta, had_diary_fail).
@@ -644,7 +653,7 @@ def _perform_transcription(audio_path, args):
     return final_segments, audio_dur, quality_meta, had_diary_fail
 
 
-def _run_batch(pending, args):
+def _run_batch(pending: list[Path], args: argparse.Namespace) -> int:
     """Process pending audio files, return success count."""
     success = 0
     for i, audio_path in enumerate(pending, 1):
