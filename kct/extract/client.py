@@ -251,7 +251,7 @@ def call_llm_extract(api_key: str, content: str, run_id: str = "",
                 input=prompt[:300],
                 metadata={"run_id": run_id or ""},
             )
-        except (ImportError, RuntimeError) as exc:
+        except Exception as exc:
             log.debug("Langfuse generation setup failed: %s", redact_sensitive_text(repr(exc)))
 
     parsed_json, usage = call_llm_json(prompt, api_key=api_key, max_tokens=8192, timeout=180)
@@ -280,7 +280,7 @@ def call_llm_extract(api_key: str, content: str, run_id: str = "",
                         },
                     )
                     _gen.end()
-                except (RuntimeError, ValueError) as exc:
+                except Exception as exc:
                     log.debug("Langfuse generation update failed: %s", redact_sensitive_text(repr(exc)))
 
             return parsed
@@ -291,7 +291,7 @@ def call_llm_extract(api_key: str, content: str, run_id: str = "",
     if _gen:
         try:
             _gen.end()
-        except RuntimeError as exc:
+        except Exception as exc:
             log.debug("Langfuse generation cleanup failed: %s", redact_sensitive_text(repr(exc)))
 
     return None
