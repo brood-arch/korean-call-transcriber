@@ -54,6 +54,8 @@ WIN_PYTHON = str(_p.win.python)
 MEMPALACE_PY = Path(os.environ.get("MEMPALACE_PY", "/home/brood38/.local/share/uv/tools/mempalace/bin/python"))
 VENV_PYTHON = str(WORKSPACE / ".venv" / "bin" / "python")
 ACTIVE_WINDOWS_TASKS = ["OpenClaw-CallRecordingsAutomation", "OpenClaw-Pipeline"]
+ERROR_COUNTER_PATH = STATE_DIR / "pipeline_error_counter.json"
+MAX_CONSECUTIVE_SAME_ERROR = 3  # 동일 에러 N회 연속 시 해당 스텝 자동 스킵
 
 
 def now_kst() -> datetime:
@@ -137,6 +139,76 @@ def acquire_lock(run_id: str, stale_seconds: int) -> bool:
         LOCK_DIR.mkdir()
         safe_write_json(LOCK_DIR / "owner.json", {"run_id": run_id, "pid": os.getpid(), "started_at": iso_now(), "reclaimed_stale": owner})
         return True
+
+
+def _load_error_counter() -> dict[str, Any]:
+    if ERROR_COUNTER_PATH.exists():
+        try:
+            return json.loads(ERROR_COUNTER_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {"consecutive_errors": {}, "last_runs": []}
+
+
+def _save_error_counter(counter: dict[str, Any]) -> None:
+    ERROR_COUNTER_PATH.parent.mkdir(parents=True, exist_ok=True)
+    safe_write_json(ERROR_COUNTER_PATH, counter)
+
+
+def _extract_error_signature(stderr: str) -> str:
+    """Extract a short error signature from stderr for dedup."""
+    for pattern in [
+        "ModuleNotFoundError",
+        "ImportError",
+        "FileNotFoundError",
+        "PermissionError",
+        "ConnectionError",
+        "TimeoutError",
+        "RuntimeError",
+        "429",
+        "503",
+        "500",
+    ]:
+        if pattern.lower() in stderr.lower():
+            # Return the line containing the pattern
+            for line in stderr.splitlines():
+                if pattern.lower() in line.lower():
+                    return line.strip()[:200]
+            return pattern
+    return stderr.strip()[:200] if stderr.strip() else "unknown"
+
+
+def _check_error_pause(step_name: str) -> str | None:
+    """Check if a step should be paused due to repeated errors.
+    Returns the error signature if paused, None otherwise."""
+    counter = _load_error_counter()
+    step_errors = counter.get("consecutive_errors", {}).get(step_name, {})
+    count = step_errors.get("count", 0)
+    if count >= MAX_CONSECUTIVE_SAME_ERROR:
+        return step_errors.get("signature", "unknown")
+    return None
+
+
+def _record_step_result(step_name: str, returncode: int, stderr: str) -> None:
+    """Track consecutive errors per step. Reset on success."""
+    counter = _load_error_counter()
+    consec = counter.setdefault("consecutive_errors", {})
+    if returncode != 0:
+        sig = _extract_error_signature(stderr)
+        entry = consec.get(step_name, {"count": 0, "signature": ""})
+        if entry.get("signature") == sig:
+            entry["count"] = entry.get("count", 0) + 1
+        else:
+            entry = {"count": 1, "signature": sig}
+        entry["last_seen"] = iso_now()
+        consec[step_name] = entry
+    else:
+        consec.pop(step_name, None)
+    # Keep only last 10 runs
+    runs = counter.setdefault("last_runs", [])
+    runs.append({"step": step_name, "rc": returncode, "at": iso_now()})
+    counter["last_runs"] = runs[-50:]
+    _save_error_counter(counter)
 
 
 def release_lock() -> None:
@@ -284,51 +356,64 @@ def main(argv: list[str] | None = None) -> int:
             append_log({"at": iso_now(), "run_id": run_id, "event": "mem_reclaim_before", "vram_pct": summary["mem_before"]["vram_pct"]})
             _mem_reclaim()
 
+        def _run_step(name: str, argv: list[str], *, timeout: int) -> dict[str, Any]:
+            """Run a pipeline step with error-pause checking."""
+            pause_sig = _check_error_pause(name)
+            if pause_sig:
+                append_log({"at": iso_now(), "run_id": run_id, "event": "step_paused", "step": name, "error_signature": pause_sig})
+                row = {"step": name, "returncode": -2, "duration_seconds": 0, "stdout_tail": "", "stderr_tail": f"SKIPPED: paused after {MAX_CONSECUTIVE_SAME_ERROR}x consecutive error: {pause_sig}"}
+                summary["steps"].append(row)
+                return row
+            result = run_cmd(name, argv, timeout=timeout, run_id=run_id)
+            summary["steps"].append(result)
+            _record_step_result(name, result.get("returncode", 1), result.get("stderr_tail", ""))
+            return result
+
         if not args.skip_transcribe:
-            summary["steps"].append(run_cmd(
+            _run_step(
                 "call_recordings_automation",
                 win_py_step("call_recordings_automation.py", ["--transcribe-limit", str(args.transcribe_limit), "--days", str(args.days), "--transcribe-only"]),
                 timeout=7200,
-                run_id=run_id,
-            ))
+            )
         if not args.skip_transcribe:
-            summary["steps"].append(run_cmd(
+            _run_step(
                 "batch_diarize",
                 [VENV_PYTHON, str(SCRIPTS / "batch_diarize.py"), "--days", str(args.days)],
                 timeout=3600,
-                run_id=run_id,
-            ))
-        summary["steps"].append(run_cmd("build_chroma_index", win_py_step("build_chroma_index.py", []), timeout=3600, run_id=run_id))
+            )
+        _run_step("build_chroma_index", win_py_step("build_chroma_index.py", []), timeout=3600)
         if not args.skip_extract:
-            summary["steps"].append(run_cmd("extract_all_today", win_py_step("extract_all.py", ["--today"]), timeout=3600, run_id=run_id))
+            _run_step("extract_all_today", win_py_step("extract_all.py", ["--today"]), timeout=3600)
         if not args.skip_obsidian:
-            # WSL-native obsidian sync — avoids WSL→Windows→9p double-hop
-            summary["steps"].append(run_cmd(
+            _run_step(
                 "sync_transcripts_to_obsidian",
                 ["python3", str(SCRIPTS / "obsidian_sync_wsl.py"), "transcripts"],
                 timeout=1800,
-                run_id=run_id,
-            ))
+            )
         if not args.skip_shared_events:
-            summary["steps"].append(run_cmd("index_shared_events", ["bash", str(SCRIPTS / "index_shared_events_wsl.sh")], timeout=1800, run_id=run_id))
+            _run_step("index_shared_events", ["bash", str(SCRIPTS / "index_shared_events_wsl.sh")], timeout=1800)
         if not args.skip_mempalace:
-            summary["steps"].append(run_cmd(
+            _run_step(
                 "mempalace_business_archive",
                 [str(MEMPALACE_PY), str(SCRIPTS / "mempalace_business_archive.py"), "--days", str(args.days), "--limit", "100"],
                 timeout=3600,
-                run_id=run_id,
-            ))
+            )
         if not args.skip_email_archive:
-            summary["steps"].append(run_cmd(
+            _run_step(
                 "mempalace_email_archive",
                 [str(MEMPALACE_PY), str(SCRIPTS / "mempalace_email_archive.py"), "--account", "brood38@naver.com", "--days", "14", "--limit", "0"],
                 timeout=1800,
-                run_id=run_id,
-            ))
-        summary["steps"].append(run_cmd("pipeline_health_check", win_py_step("pipeline_health_check.py", []), timeout=900, run_id=run_id))
+            )
+        _run_step("pipeline_health_check", win_py_step("pipeline_health_check.py", []), timeout=900)
 
         failed = [s for s in summary["steps"] if int(s.get("returncode", 1)) != 0]
-        summary["status"] = "failed" if failed else "succeeded"
+        succeeded = [s for s in summary["steps"] if int(s.get("returncode", 0)) == 0]
+        if failed and succeeded:
+            summary["status"] = "partial_success"
+        elif failed:
+            summary["status"] = "failed"
+        else:
+            summary["status"] = "succeeded"
 
         # ── Memory guard: check + reclaim after pipeline ─────────────────
         summary["mem_after"] = _mem_snapshot()
@@ -340,12 +425,15 @@ def main(argv: list[str] | None = None) -> int:
         summary["ended_at"] = iso_now()
         safe_write_json(SUMMARY_PATH, summary)
         if failed:
-            emit_event("error", "Hermes active transcription pipeline run failed", run_id=run_id, extra={"failed_steps": [s["step"] for s in failed]}, risks=["rollback may be needed if failures repeat"])
+            if summary["status"] == "partial_success":
+                emit_event("warning", f"Pipeline partial success: {len(succeeded)}/{len(summary['steps'])} steps ok, {len(failed)} failed", run_id=run_id, extra={"failed_steps": [s["step"] for s in failed], "succeeded_steps": [s["step"] for s in succeeded]}, risks=["some steps failed but pipeline continued"])
+            else:
+                emit_event("error", "Hermes active transcription pipeline run failed", run_id=run_id, extra={"failed_steps": [s["step"] for s in failed]}, risks=["rollback may be needed if failures repeat"])
         else:
             emit_event("task_completed", "Hermes active transcription pipeline run succeeded", run_id=run_id, extra={"steps": [s["step"] for s in summary["steps"]]})
         if args.print_json:
             print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
-        return 1 if failed else 0
+        return 1 if failed and not succeeded else 0
     finally:
         release_lock()
 
