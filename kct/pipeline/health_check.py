@@ -134,7 +134,16 @@ def _check_unprocessed_todos(now, pt, processed_stems):
 
 
 def main() -> int:
-    """파이프라인 건강 상태를 점검하고 이슈가 있으면 1, 없으면 0을 반환."""
+    """파이프라인 건강 상태를 점검한다.
+
+    Return codes:
+        0 — healthy or minor issues (logged but non-fatal)
+        2 — critical issues that require immediate attention
+
+    Issues are always included in the JSON result printed to stdout
+    regardless of the exit code, so callers can inspect without
+    relying on rc alone.
+    """
     now = datetime.now(KST)
     pt = _load_and_merge_processed()
     blacklist = _load_blacklist()
@@ -154,14 +163,21 @@ def main() -> int:
         if no_status:
             issues.append(f"ORPHAN_TODOS: {len(no_status)} todos without status field")
 
+    # Determine severity: critical issues get rc=2, everything else rc=0
+    critical_keywords = ("MISSING_TRANSCRIPTS",)
+    has_critical = any(any(iss.startswith(kw) for kw in critical_keywords) for iss in issues)
+
+    result = {"issues": issues, "issue_count": len(issues), "critical": has_critical}
+    print(json.dumps(result, ensure_ascii=False))
+
     if issues:
         log.info("PIPELINE ISSUES (%s):", len(issues))
         for issue in issues:
             log.info("  🔴 %s", issue)
-        return 1
     else:
         log.info("PIPELINE HEALTHY: All recent files processed")
-        return 0
+
+    return 2 if has_critical else 0
 
 
 if __name__ == "__main__":

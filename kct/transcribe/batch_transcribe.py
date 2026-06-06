@@ -243,7 +243,9 @@ def get_pending(recent_first: bool = False) -> list[Path]:
     audio_files = [f for f in SOURCE_DIR.glob("*.m4a") if f.stat().st_size > 1024]
     pending = [
         f for f in audio_files
-        if not is_blacklisted(f.stem) and not (OUTPUT_DIR / f"{f.stem}.txt").exists()
+        if not is_blacklisted(f.stem)
+        and not (OUTPUT_DIR / f"{f.stem}.txt").exists()
+        and not (OUTPUT_DIR / f"{f.stem}.too_short").exists()
     ]
     if recent_first:
         pending.sort(key=lambda f: f.stat().st_mtime, reverse=True)
@@ -532,6 +534,29 @@ def _write_transcript_output(
     text = _format_segments_text(final_segments)
     if len(text.strip()) < 10:
         raise ValueError("Near-empty result")
+
+    # Filter out too-short transcriptions (< 200 bytes) as "too_short"
+    if len(text.encode("utf-8")) < 200:
+        log.info(
+            "  ⚠️ Too short (%d bytes), marking as too_short: %s",
+            len(text.encode("utf-8")), audio_path.name,
+        )
+        # Write a marker file so downstream knows this was intentionally skipped
+        marker_path = OUTPUT_DIR / f"{audio_path.stem}.too_short"
+        marker_path.write_text(
+            json.dumps({
+                "stem": audio_path.stem,
+                "status": "too_short",
+                "bytes": len(text.encode("utf-8")),
+                "ts": datetime.now().isoformat(),
+            }, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        # Also write the short transcript for reference
+        safe_write_text(out_path, text + "\n")
+        elapsed = time.time() - t0
+        log.info("  ✅ %.1fs too_short marker written", elapsed, flush=True)
+        return True
 
     corrected_text, changes = apply_corrections(text, source=audio_path.name)
 

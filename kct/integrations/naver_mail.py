@@ -57,6 +57,38 @@ DEFAULT_FOLDERS = [f.strip().strip('"') for f in NAVER_MAIL_FOLDERS.split(",")]
 LIMIT = int(NAVER_MAIL_LIMIT)
 STATE_DIR = NAVER_MAIL_STATE_DIR
 
+IMAP_RETRY_ATTEMPTS = 3
+IMAP_RETRY_DELAY_SEC = 5
+
+
+def _connect_imap_with_retry(
+    host: str, port: int, account: str, password: str,
+    max_retries: int = IMAP_RETRY_ATTEMPTS, delay: float = IMAP_RETRY_DELAY_SEC,
+) -> imaplib.IMAP4_SSL:
+    """Connect to IMAP server with retry logic.
+
+    Retries up to *max_retries* times with *delay* seconds between attempts
+    to handle transient timeout/connection errors.
+    """
+    import time as _time
+
+    last_exc: Exception | None = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            imap = imaplib.IMAP4_SSL(host, port)
+            imap.login(account, password)
+            log.debug("IMAP connected on attempt %d/%d", attempt, max_retries)
+            return imap
+        except (imaplib.IMAP4.error, OSError, ConnectionError, TimeoutError) as exc:
+            last_exc = exc
+            log.warning(
+                "IMAP connection attempt %d/%d failed: %s",
+                attempt, max_retries, exc,
+            )
+            if attempt < max_retries:
+                _time.sleep(delay)
+    raise last_exc  # type: ignore[misc]
+
 
 def _get_credentials() -> tuple[str, str]:
     """Read Naver Mail credentials from environment variables."""
@@ -167,9 +199,8 @@ def fetch_messages(
         state = {}
 
     results = []
-    with imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT) as imap:
-        imap.login(account, password)
-
+    imap = _connect_imap_with_retry(IMAP_HOST, IMAP_PORT, account, password)
+    with imap:
         for folder in folders:
             # Naver IMAP requires quoted-string for folder names with spaces
             imap_folder = f'"{folder}"' if " " in folder else folder

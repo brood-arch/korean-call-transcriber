@@ -55,6 +55,34 @@ def find_missing(transcript_dir: Path, limit: int = 0) -> list:
     return missing
 
 
+def find_retry_failed(transcript_dir: Path, limit: int = 0) -> list:
+    """Find diarization failures with .segments.json that have a failed _result.json.
+
+    Looks for _result.json files whose metadata indicates diarize failure,
+    or .segments.json files where the corresponding _result.json has failed metadata.
+    """
+    retry_candidates = []
+    for result_file in sorted(transcript_dir.glob("*.segments_result.json")):
+        try:
+            payload = json.loads(result_file.read_text(encoding="utf-8"))
+            meta = payload.get("_meta", {}) if isinstance(payload, dict) else {}
+            if not meta.get("diarize_ok", True):
+                stem = result_file.stem.replace(".segments", "")
+                segs_path = transcript_dir / (stem + ".segments.json")
+                if not segs_path.exists():
+                    continue
+                for ext in (".m4a", ".wav", ".mp3"):
+                    audio_path = transcript_dir.parent / "통화녹음" / (stem + ext)
+                    if audio_path.exists():
+                        retry_candidates.append((stem, segs_path, audio_path))
+                        break
+        except (json.JSONDecodeError, OSError) as exc:  # noqa: BLE001
+            log.debug("Failed to inspect result %s: %s", result_file, exc)
+    if limit > 0:
+        retry_candidates = retry_candidates[:limit]
+    return retry_candidates
+
+
 def _build_diarize_argv(stem, segs_path, audio_path, running_on_wsl):
     """Build the argv for diarization subprocess."""
     if running_on_wsl:
@@ -117,6 +145,8 @@ def main():
                         help="Skip files that already have _result.json")
     parser.add_argument("--days", type=int, default=0,
                         help="Only process files from last N days (0=all)")
+    parser.add_argument("--retry-failed", action="store_true",
+                        help="Only retry files with failed diarization results")
     args = parser.parse_args()
 
     running_on_wsl = is_wsl()
@@ -128,7 +158,10 @@ def main():
         log.error("transcript dir not found: %s", transcript_dir)
         sys.exit(1)
 
-    missing = find_missing(transcript_dir, args.limit)
+    if args.retry_failed:
+        missing = find_retry_failed(transcript_dir, args.limit)
+    else:
+        missing = find_missing(transcript_dir, args.limit)
     if args.days > 0:
         from datetime import datetime, timedelta, timezone
         KST = timezone(timedelta(hours=9))

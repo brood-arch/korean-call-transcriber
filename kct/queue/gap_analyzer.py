@@ -97,6 +97,54 @@ def canonical_transcript_stem(stem: str) -> str:
     return m.group(1) if m else stem
 
 
+def _parse_stem_parts(stem: str) -> dict[str, str]:
+    """파일명 stem에서 날짜+전화번호+발신자를 추출해 dict로 반환.
+
+    지원 패턴:
+        {caller}_{phone}_{datetime14}        → 통화_01012345678_20260605100000
+        {caller}_{datetime14}                 → caller_20260605100000
+        {phone}_{datetime14}                  → 01012345678_20260605100000
+        기타: date/phone를 빈 문자열로 반환
+    """
+    # Pattern 1: caller_phone_datetime
+    m = re.match(r"^(.+?)_(\d{10,11})_(\d{14})$", stem)
+    if m:
+        return {"caller": m.group(1), "phone": m.group(2), "date": m.group(3)}
+    # Pattern 2: phone_datetime (caller absent)
+    m = re.match(r"^(\d{10,11})_(\d{14})$", stem)
+    if m:
+        return {"caller": "", "phone": m.group(1), "date": m.group(2)}
+    # Pattern 3: caller_datetime (no phone)
+    m = re.match(r"^(.+?)_(\d{14})$", stem)
+    if m:
+        return {"caller": m.group(1), "phone": "", "date": m.group(2)}
+    return {"caller": "", "phone": "", "date": ""}
+
+
+def _stems_fuzzy_match(audio_stem: str, transcript_stem: str) -> bool:
+    """두 stem이 같은 통화를 가리키는지 날짜+전화번호 기반으로 판별한다.
+
+    정확한 stem 일치가 실패할 경우 날짜(YYYYMMDDHHMMSS)와 전화번호가
+    모두 일치하면 같은 통화로 간주한다.
+    """
+    if audio_stem == transcript_stem:
+        return True
+    # Check canonical (strip _HHMMSS suffix)
+    canon = canonical_transcript_stem(transcript_stem)
+    if audio_stem == canon:
+        return True
+    # Fuzzy: compare date + phone
+    ap = _parse_stem_parts(audio_stem)
+    tp = _parse_stem_parts(transcript_stem)
+    if ap["date"] and tp["date"] and ap["date"] == tp["date"]:
+        if ap["phone"] and tp["phone"] and ap["phone"] == tp["phone"]:
+            return True
+        # Same date, both have no phone — caller-based
+        if not ap["phone"] and not tp["phone"] and ap["caller"] == tp["caller"]:
+            return True
+    return False
+
+
 def iso_mtime(path: Path) -> str:
     """파일 수정 시간을 ISO-8601 문자열로 반환."""
     return datetime.fromtimestamp(path.stat().st_mtime, tz=KST).isoformat()
@@ -173,6 +221,16 @@ def load_diarization_failed(log_path: Path) -> set[str]:
     return failed
 
 
+def _audio_has_matching_transcript(stem: str, transcript_by_stem: dict[str, Path]) -> bool:
+    """Check if any transcript stem fuzzy-matches the audio stem."""
+    if stem in transcript_by_stem:
+        return True
+    for t_stem in transcript_by_stem:
+        if _stems_fuzzy_match(stem, t_stem):
+            return True
+    return False
+
+
 def _classify_audio_gaps(
     audio_by_stem: dict[str, Path], transcript_by_stem: dict[str, Path],
     blacklisted_stems: set[str], failed_stems: set[str], blacklist_entries: dict[str, dict[str, Any]],
@@ -180,7 +238,7 @@ def _classify_audio_gaps(
 ) -> None:
     """Classify audio files missing transcripts."""
     for stem, audio_path in sorted(audio_by_stem.items()):
-        if stem in transcript_by_stem:
+        if _audio_has_matching_transcript(stem, transcript_by_stem):
             continue
         if stem in blacklisted_stems:
             cause_files["blacklisted"].append(
@@ -299,7 +357,10 @@ def analyze(
     )
 
     category_counts = {k: len(cause_files[k]) for k in CAUSE_ORDER}
-    exact_complete = sum(1 for stem in audio_by_stem if stem in transcript_by_stem)
+    exact_complete = sum(
+        1 for stem in audio_by_stem
+        if _audio_has_matching_transcript(stem, transcript_by_stem)
+    )
 
     counts = {
         "source_audio_total_valid_m4a": len(audio_files),
