@@ -26,7 +26,7 @@ from typing import Any
 KST = timezone(timedelta(hours=9))
 
 # ── paths.py loader ──────────────────────────────────────────────────────
-import importlib.util as _importlib_util
+import importlib.util as _importlib_util  # noqa: E402,I001
 _SCRIPT_DIR = Path(__file__).resolve().parent
 _paths_spec = _importlib_util.spec_from_file_location("paths", _SCRIPT_DIR / "paths.py")
 if _paths_spec and _paths_spec.loader:

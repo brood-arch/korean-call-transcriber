@@ -34,7 +34,7 @@ def _load_api_keys() -> None:
     """shared_api_keys에서 API 값을 읽어 환경변수로 세팅."""
     sys.path.insert(0, str(_SCRIPTS))
     try:
-        from shared_api_keys import (
+        from shared_api_keys import (  # noqa: I001
             get_zai_api_key,
             get_zai_base_url,
             get_telegram_config,
