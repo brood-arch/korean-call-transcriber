@@ -25,6 +25,7 @@ from typing import Any
 
 from kct.config import STATE_DIR, get_llm_config
 from kct.extract.client import call_llm_json
+from kct.pipeline.prompt_security import wrap_untrusted_source
 from kct.pipeline.utils import safe_load_json, safe_save_json
 
 log = logging.getLogger("email_todo_extract")
@@ -162,7 +163,8 @@ def call_llm_extract(content: str, api_key: str = "", base_url: str = "", model:
     Returns:
         Parsed JSON dict from LLM response, or None on failure.
     """
-    prompt = EXTRACTION_PROMPT.replace("{content}", content[:MAX_CONTENT_CHARS], 1)
+    untrusted_content = wrap_untrusted_source("email", content[:MAX_CONTENT_CHARS])
+    prompt = EXTRACTION_PROMPT.replace("{content}", untrusted_content, 1)
     result, _usage = call_llm_json(
         prompt,
         api_key=api_key,

@@ -13,6 +13,7 @@ import warnings as _w
 from typing import Any
 
 from kct.config import get_llm_config as _resolve_llm_config
+from kct.pipeline.prompt_security import wrap_untrusted_source
 from kct.pipeline.redact import redact_sensitive_text
 
 from .prompt import get_prompt
@@ -235,7 +236,8 @@ def call_llm_extract(api_key: str, content: str, run_id: str = "",
     from .parser import parse_unified_response
 
     prompt_template = get_prompt()
-    prompt = prompt_template.replace("{content}", content[:MAX_CONTENT_CHARS], 1)
+    untrusted_content = wrap_untrusted_source("transcript", content[:MAX_CONTENT_CHARS])
+    prompt = prompt_template.replace("{content}", untrusted_content, 1)
     config = _resolve_llm_config(api_key)
 
     # Langfuse span

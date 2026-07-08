@@ -77,9 +77,9 @@ def transcribe_file(audio_path, model_path, compute_type, language, beam_size, o
         from faster_whisper import BatchedInferencePipeline
         batched_model = BatchedInferencePipeline(model=model)
         use_batched = True
-        log.info("BatchedInferencePipeline enabled (batch_size=16)", flush=True)
+        log.info("BatchedInferencePipeline enabled (batch_size=16)")
     except (ImportError, RuntimeError, AttributeError) as _bat_err:  # noqa: BLE001
-        log.info(f"BatchedInferencePipeline unavailable ({_bat_err}), using sequential mode", flush=True)
+        log.info(f"BatchedInferencePipeline unavailable ({_bat_err}), using sequential mode")
 
     def _run_batched(path, offset=0.0):
         segs, info = batched_model.transcribe(
@@ -158,7 +158,7 @@ def transcribe_file(audio_path, model_path, compute_type, language, beam_size, o
         tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         tmp.replace(target)
 
-    log.info(f"OK: {stem} — {len(seg_rows)} segments, {duration:.0f}s", flush=True)
+    log.info(f"OK: {stem} — {len(seg_rows)} segments, {duration:.0f}s")
     return 0
 
 

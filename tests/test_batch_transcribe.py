@@ -1,5 +1,6 @@
 """Tests for kct.transcribe.batch_transcribe — blacklist, pending selection, speaker mapping."""
 
+import argparse
 import json
 from pathlib import Path
 from unittest.mock import patch
@@ -142,3 +143,27 @@ class TestParseCallerInfo:
         name, phone = parse_caller_info("random_file_name")
         assert name is None
         assert phone is None
+
+
+def test_process_single_audio_success_path_does_not_pass_flush_to_logger(tmp_path, monkeypatch):
+    """Regression: logging.Logger.info does not accept flush=True."""
+    from kct.transcribe import batch_transcribe as bt
+
+    audio = tmp_path / "call_001.m4a"
+    _write_audio(audio)
+    output_dir = tmp_path / "transcripts"
+    output_dir.mkdir()
+    out_path = output_dir / "call_001.txt"
+
+    monkeypatch.setattr(bt, "OUTPUT_DIR", output_dir)
+    monkeypatch.setattr(bt, "get_audio_duration", lambda _path: 30.0)
+    monkeypatch.setattr(
+        bt,
+        "_perform_transcription",
+        lambda *_args: ([{"start": 0.0, "end": 1.0, "text": "안녕하세요 " * 80}], 30.0, {}, False),
+    )
+    monkeypatch.setattr(bt, "apply_corrections", lambda text, source="": (text, []))
+    monkeypatch.setattr(bt, "log_quality", lambda *args, **kwargs: None)
+
+    assert bt._process_single_audio(audio, out_path, argparse.Namespace(), 1, 1) is True
+    assert out_path.exists()

@@ -94,7 +94,7 @@ def _get_conn():
 
 
 def _shell_jobs_enabled() -> bool:
-    return KCT_ENABLE_SHELL_JOBS.lower() in {"1", "true", "yes"}
+    return os.environ.get("KCT_ENABLE_SHELL_JOBS", KCT_ENABLE_SHELL_JOBS).lower() in {"1", "true", "yes"}
 
 
 class MinionsQueue:
@@ -509,6 +509,14 @@ class MinionsQueue:
         run_env = {**os.environ, **env_overrides}
 
         try:
+            if argv or cmd:
+                if not _shell_jobs_enabled():
+                    return {
+                        "exit_code": 2,
+                        "error": "Shell command payloads are disabled by default. "
+                                 "Set KCT_ENABLE_SHELL_JOBS=1 for trusted local automation.",
+                    }
+
             # Prefer argv (structured, safe) over cmd (string, risky)
             if argv:
                 proc = subprocess.run(
@@ -516,12 +524,6 @@ class MinionsQueue:
                     capture_output=True, text=True, timeout=timeout,
                 )
             elif cmd:
-                if not _shell_jobs_enabled():
-                    return {
-                        "exit_code": 2,
-                        "error": "Shell command payloads are disabled by default. "
-                                 "Set KCT_ENABLE_SHELL_JOBS=1 for trusted local automation.",
-                    }
                 log.warning("Legacy 'cmd' payload used; switch to 'argv' format. cmd=%s", cmd[:100])
                 try:
                     parsed_argv = shlex.split(cmd, posix=(os.name != "nt"))

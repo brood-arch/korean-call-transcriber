@@ -241,6 +241,21 @@ def test_execute_shell_cmd_disabled_by_default(_mock_psycopg2, monkeypatch):
     assert "disabled by default" in result["error"]
 
 
+def test_execute_shell_argv_disabled_by_default(_mock_psycopg2, monkeypatch):
+    monkeypatch.delenv("KCT_ENABLE_SHELL_JOBS", raising=False)
+    mq, _ = _make_queue(_mock_psycopg2)
+    job = {
+        "payload": json.dumps({"argv": [sys.executable, "-c", "print('hello')"]}),
+        "timeout_ms": 5000,
+    }
+    with patch("kct.pipeline.minions_queue.subprocess.run") as run_mock:
+        result = mq.execute_shell(job)
+
+    assert result["exit_code"] == 2
+    assert "disabled by default" in result["error"]
+    run_mock.assert_not_called()
+
+
 def test_execute_shell_argv(_mock_psycopg2, monkeypatch):
     monkeypatch.setenv("KCT_ENABLE_SHELL_JOBS", "1")
     mq, _ = _make_queue(_mock_psycopg2)

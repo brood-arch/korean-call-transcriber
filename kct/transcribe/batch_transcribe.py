@@ -555,7 +555,7 @@ def _write_transcript_output(
         # Also write the short transcript for reference
         safe_write_text(out_path, text + "\n")
         elapsed = time.time() - t0
-        log.info("  ✅ %.1fs too_short marker written", elapsed, flush=True)
+        log.info("  ✅ %.1fs too_short marker written", elapsed)
         return True
 
     corrected_text, changes = apply_corrections(text, source=audio_path.name)
@@ -573,7 +573,6 @@ def _write_transcript_output(
     log.info(
         "  ✅ %.1fs (%.0fx) corrections=%d%s",
         elapsed, rtf, len(changes) if changes else 0, diary_flag,
-        flush=True,
     )
 
 
@@ -582,11 +581,11 @@ def _process_single_audio(audio_path: Path, out_path: Path, args: argparse.Names
     duration = get_audio_duration(audio_path)
     if duration > MAX_AUDIO_DURATION_SEC:
         log.info(
-            "[%d/%d] %s — too long, skipping", i, total, audio_path.name, flush=True,
+            "[%d/%d] %s — too long, skipping", i, total, audio_path.name,
         )
         return False
 
-    log.info("[%d/%d] %s (%.0fs)", i, total, audio_path.name, duration, flush=True)
+    log.info("[%d/%d] %s (%.0fs)", i, total, audio_path.name, duration)
     t0 = time.time()
 
     try:
@@ -606,7 +605,7 @@ def _prepare_pending_list(args: argparse.Namespace) -> list[Path]:
         f = Path(args.file)
         if not args.force and (OUTPUT_DIR / f"{f.stem}.txt").exists():
             log.info("Already transcribed (skipping): %s", f.name)
-            log.info(f"SKIP: {f.name} already transcribed", flush=True)
+            log.info(f"SKIP: {f.name} already transcribed")
             return []
         return [f]
 
@@ -624,13 +623,13 @@ def _check_gpu_resources(args: argparse.Namespace, gpu_free: int) -> tuple[bool,
     if args.force or gpu_free >= GPU_MIN_FREE_MB:
         return True, gpu_free
 
-    log.info(f"⚠️ GPU low ({gpu_free}MB)", flush=True)
+    log.info(f"⚠️ GPU low ({gpu_free}MB)")
     killed = kill_gpu_hogs()
     if killed:
         time.sleep(2)
         gpu_free = get_gpu_free_mb()
     if gpu_free < GPU_MIN_FREE_MB:
-        log.info("❌ GPU insufficient. Skipping.", flush=True)
+        log.info("❌ GPU insufficient. Skipping.")
         return False, gpu_free
     return True, gpu_free
 
@@ -663,7 +662,7 @@ def _perform_transcription(audio_path: Path, args: argparse.Namespace) -> tuple[
     had_diary_fail = False
     if audio_dur >= LONG_AUDIO_FAST_PATH_SEC:
         final_segments = segments
-        log.info("  ⚡ Long audio fast path: skipping align/diarize", flush=True)
+        log.info("  ⚡ Long audio fast path: skipping align/diarize")
     else:
         final_segments, align_meta = align_and_diarize_subprocess(
             audio_path, segments, args.no_diarize,
@@ -686,7 +685,7 @@ def _run_batch(pending: list[Path], args: argparse.Namespace) -> int:
         if not args.force:
             gpu_free = get_gpu_free_mb()
             if gpu_free < GPU_MIN_FREE_PER_FILE:
-                log.info("[%d/%d] GPU low, stopping", i, len(pending), flush=True)
+                log.info("[%d/%d] GPU low, stopping", i, len(pending))
                 break
         if _process_single_audio(audio_path, out_path, args, i, len(pending)):
             success += 1
@@ -708,7 +707,7 @@ def main():
     ram_pct = psutil.virtual_memory().percent
     log.info(
         "Pending: %d | GPU free: %dMB | RAM: %.0f%%",
-        len(pending), gpu_free, ram_pct, flush=True,
+        len(pending), gpu_free, ram_pct,
     )
 
     proceed, gpu_free = _check_gpu_resources(args, gpu_free)
@@ -718,10 +717,10 @@ def main():
     success = _run_batch(pending, args)
 
     gpu_after = get_gpu_free_mb()
-    log.info("\nDone: %d/%d | GPU: %dMB", success, len(pending), gpu_after, flush=True)
+    log.info("\nDone: %d/%d | GPU: %dMB", success, len(pending), gpu_after)
     summary = {"success": success, "total": len(pending), "gpu_free_mb": gpu_after}
     if args.json:
-        log.info(json.dumps(summary, ensure_ascii=False), flush=True)
+        log.info(json.dumps(summary, ensure_ascii=False))
     return EXIT_OK if success > 0 else EXIT_PARTIAL
 
 

@@ -42,7 +42,7 @@ def _log_to_file(msg: str) -> None:
             f.write(line + "\n")
     except OSError as exc:  # noqa: BLE001
         log.warning(f"{ts} log write failed: {exc}")
-    log.info(line, flush=True)
+    log.info(line)
 
 
 # ── GPU helpers ──────────────────────────────────────────────────────────
