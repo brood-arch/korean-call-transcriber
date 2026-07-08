@@ -424,10 +424,12 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 
 ## Changelog
 
-### Unreleased
-- Updated Hermes active-runner behavior so any `partial_success` exits non-zero and emits an error event for alerting.
-- Added the extraction quality verification/re-extraction gate to the active-run sequence.
-- Added `docs/operations-dashboard.md` with the 2026-07-08 pipeline/dashboard field status and verification checklist.
+### v1.1.0
+- Added Hermes active-runner orchestration for the full transcription pipeline.
+- Added WSL/Windows workspace launcher scripts and operations dashboard documentation.
+- Added extraction quality verification/re-extraction to the active-run sequence.
+- Hardened retry queue locking, stale-lock reclaim, JSONL validation, and corrupt-state reporting.
+- Updated active-run failure semantics so upstream failures block downstream stages by default and `partial_success` exits non-zero.
 
 ### v0.8.2
 - Refactored `extract_entities.py` and `extract_schedules.py` to use centralized LLM client (`kct.extract.client`)

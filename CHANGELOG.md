@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-07-08
+
+### Added
+- Hermes active-runner orchestration for the full transcription pipeline.
+- WSL/Windows workspace launcher scripts for bridge execution and diarization.
+- Extraction quality verification and re-extraction gate in the active-run sequence.
+- Operations dashboard documentation and field verification checklist.
+
+### Changed
+- Active runs now block downstream stages after upstream failure by default, with an explicit continue-on-error override.
+- `partial_success` active-run results now exit non-zero and emit alertable error events.
+- State validation now checks JSONL files line-by-line and reports the failing line number.
+
+### Fixed
+- Hardened retry queue locking, stale-lock reclaim, and running-entry lease handling.
+- Prevented corrupt state files from being silently treated as an empty healthy state.
+- Fixed forced retranscription to overwrite canonical outputs while preserving timestamped backups.
+- Removed logger flush/prompt-boundary failure paths that could break active runs.
+
 ## [1.0.0] - 2025-06-05
 
 ### Changed
@@ -92,6 +111,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Obsidian sync, retry queue, state validator
 - MIT license
 
+[1.1.0]: https://github.com/brood-arch/korean-call-transcriber/releases/tag/v1.1.0
+[1.0.0]: https://github.com/brood-arch/korean-call-transcriber/releases/tag/v1.0.0
 [0.9.1]: https://github.com/brood-arch/korean-call-transcriber/releases/tag/v0.9.1
 [0.9.0]: https://github.com/brood-arch/korean-call-transcriber/releases/tag/v0.9.0
 [0.8.2]: https://github.com/brood-arch/korean-call-transcriber/releases/tag/v0.8.2
