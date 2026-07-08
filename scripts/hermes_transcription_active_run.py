@@ -25,21 +25,46 @@ from typing import Any
 
 KST = timezone(timedelta(hours=9))
 
-# ── paths.py loader ──────────────────────────────────────────────────────
+# ── Deployment path loader ───────────────────────────────────────────────
+# The production OpenClaw workspace ships a local scripts/paths.py + paths.json.
+# The public package repo does not. Fall back to kct.config/env variables so
+# --help, tests, and non-OpenClaw deployments remain importable.
 import importlib.util as _importlib_util  # noqa: E402,I001
 _SCRIPT_DIR = Path(__file__).resolve().parent
-_paths_spec = _importlib_util.spec_from_file_location("paths", _SCRIPT_DIR / "paths.py")
-if _paths_spec and _paths_spec.loader:
+_PATHS_FILE = _SCRIPT_DIR / "paths.py"
+
+class _Group:
+    def __init__(self, **kwargs: Any) -> None:
+        self.__dict__.update(kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        raise AttributeError(name)
+
+if _PATHS_FILE.exists():
+    _paths_spec = _importlib_util.spec_from_file_location("paths", _PATHS_FILE)
+    if not (_paths_spec and _paths_spec.loader):
+        raise RuntimeError(f"could not load path spec: {_PATHS_FILE}")
     _paths_mod = _importlib_util.module_from_spec(_paths_spec)
     _paths_spec.loader.exec_module(_paths_mod)
     _p = _paths_mod.p
 else:
-    import sys as _sys
-    _WORKSPACE = _SCRIPT_DIR.parent
-    if str(_WORKSPACE) not in _sys.path:
-        _sys.path.insert(0, str(_WORKSPACE))
-    from paths import Paths as _Paths
-    _p = _Paths()
+    repo_root = _SCRIPT_DIR.parent
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+    from kct.config import LOG_DIR as _LOG_DIR, STATE_DIR as _STATE_DIR, WORKSPACE as _WORKSPACE
+    from kct.pipeline.paths import wsl_to_win
+
+    class _FallbackPaths:
+        root = _WORKSPACE
+        state_dir = _STATE_DIR
+        log_dir = _LOG_DIR
+        pipeline = _Group(active_run_summary="active_run_summary.json")
+        win = _Group(
+            workspace=os.environ.get("KCT_WINDOWS_WORKSPACE", wsl_to_win(str(_WORKSPACE))),
+            python=os.environ.get("KCT_WINDOWS_PYTHON", os.environ.get("WINDOWS_PYTHON", "python")),
+        )
+
+    _p = _FallbackPaths()
 
 WORKSPACE = _p.root
 SCRIPTS = WORKSPACE / "scripts"
@@ -47,11 +72,11 @@ STATE_DIR = _p.state_dir
 LOG_DIR = _p.log_dir
 LOCK_DIR = STATE_DIR / "hermes_transcription_pipeline.lock"
 SUMMARY_PATH = STATE_DIR / _p.pipeline.active_run_summary
-CMD_EXE = "/mnt/c/Windows/System32/cmd.exe"
-POWERSHELL = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+CMD_EXE = str(Path(os.environ.get("SystemRoot", "C:\\Windows")) / "System32" / "cmd.exe") if os.name == "nt" else "/mnt/c/Windows/System32/cmd.exe"
+POWERSHELL = str(Path(os.environ.get("SystemRoot", "C:\\Windows")) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe") if os.name == "nt" else "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
 WIN_WORKSPACE = str(_p.win.workspace)
 WIN_PYTHON = str(_p.win.python)
-MEMPALACE_PY = Path(os.environ.get("MEMPALACE_PY", "/home/brood38/.local/share/uv/tools/mempalace/bin/python"))
+MEMPALACE_PY = Path(os.environ.get("MEMPALACE_PY", str(Path.home() / ".local/share/uv/tools/mempalace/bin/python")))
 VENV_PYTHON = str(WORKSPACE / ".venv" / "bin" / "python")
 ACTIVE_WINDOWS_TASKS = ["OpenClaw-CallRecordingsAutomation", "OpenClaw-Pipeline"]
 ERROR_COUNTER_PATH = STATE_DIR / "pipeline_error_counter.json"
@@ -240,10 +265,13 @@ def run_cmd(name: str, argv: list[str], *, timeout: int, run_id: str) -> dict[st
     return row
 
 
-def win_py_step(script: str, args: list[str]) -> list[str]:
+def win_py_step(script: str, args: list[str], *, env: dict[str, str] | None = None) -> list[str]:
     # The configured paths contain no spaces. Avoid nested quotes here because
     # WSL subprocess(list)->cmd.exe can preserve escaped quotes literally.
-    cmd = f"cd /d {WIN_WORKSPACE} && {WIN_PYTHON} -u scripts\\{script}"
+    prefix = ""
+    if env:
+        prefix = " ".join(f"set {k}={v}&&" for k, v in env.items()) + " "
+    cmd = f"cd /d {WIN_WORKSPACE} && {prefix}{WIN_PYTHON} -u scripts\\{script}"
     if args:
         cmd += " " + " ".join(args)
     return [CMD_EXE, "/c", cmd]
@@ -252,7 +280,8 @@ def win_py_step(script: str, args: list[str]) -> list[str]:
 def get_windows_task_states(run_id: str) -> dict[str, str]:
     names = ",".join([f"'{n}'" for n in ACTIVE_WINDOWS_TASKS])
     ps = (
-        f"Get-ScheduledTask -TaskName {names} | "
+        f"$tasks = foreach ($name in @({names})) {{ Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue }}; "
+        "$tasks | "
         "ForEach-Object { [PSCustomObject]@{ TaskName = $_.TaskName; State = $_.State.ToString() } } | "
         "ConvertTo-Json -Compress"
     )
@@ -366,7 +395,13 @@ def main(argv: list[str] | None = None) -> int:
                 return row
             result = run_cmd(name, argv, timeout=timeout, run_id=run_id)
             summary["steps"].append(result)
-            _record_step_result(name, result.get("returncode", 1), result.get("stderr_tail", ""))
+            # Some scripts write their only diagnostic to stdout. If stderr is
+            # empty, include stdout in the error signature so the pause counter
+            # does not collapse distinct failures into unhelpful "unknown".
+            diagnostic = "\n".join(
+                part for part in (result.get("stderr_tail", ""), result.get("stdout_tail", "")) if part
+            )
+            _record_step_result(name, result.get("returncode", 1), diagnostic)
             return result
 
         if not args.skip_transcribe:
@@ -381,9 +416,16 @@ def main(argv: list[str] | None = None) -> int:
                 [VENV_PYTHON, str(SCRIPTS / "batch_diarize.py"), "--days", str(args.days)],
                 timeout=3600,
             )
-        _run_step("build_chroma_index", win_py_step("build_chroma_index.py", []), timeout=3600)
+        if not args.health_only:
+            _run_step("build_chroma_index", win_py_step("build_chroma_index.py", []), timeout=3600)
         if not args.skip_extract:
-            _run_step("extract_all_today", win_py_step("extract_all.py", ["--today"]), timeout=3600)
+            _run_step("extract_all_today", win_py_step("extract_all.py", ["--today", "--batch-size", "1"], env={"KCT_DISABLE_TELEGRAM_NOTIFY": "1"}), timeout=3600)
+            # 추출 품질 검증 + 저품질 재추출
+            _run_step(
+                "verify_extraction_quality",
+                [str(VENV_PYTHON), str(SCRIPTS / "verify_extraction_quality.py"), "--today", "--re-extract"],
+                timeout=1800,
+            )
         if not args.skip_obsidian:
             _run_step(
                 "sync_transcripts_to_obsidian",
@@ -426,14 +468,17 @@ def main(argv: list[str] | None = None) -> int:
         safe_write_json(SUMMARY_PATH, summary)
         if failed:
             if summary["status"] == "partial_success":
-                emit_event("warning", f"Pipeline partial success: {len(succeeded)}/{len(summary['steps'])} steps ok, {len(failed)} failed", run_id=run_id, extra={"failed_steps": [s["step"] for s in failed], "succeeded_steps": [s["step"] for s in succeeded]}, risks=["some steps failed but pipeline continued"])
+                emit_event("error", f"Pipeline partial success: {len(succeeded)}/{len(summary['steps'])} steps ok, {len(failed)} failed", run_id=run_id, extra={"failed_steps": [s["step"] for s in failed], "succeeded_steps": [s["step"] for s in succeeded], "partial_success": True}, risks=["some steps failed but pipeline continued"])
             else:
                 emit_event("error", "Hermes active transcription pipeline run failed", run_id=run_id, extra={"failed_steps": [s["step"] for s in failed]}, risks=["rollback may be needed if failures repeat"])
         else:
             emit_event("task_completed", "Hermes active transcription pipeline run succeeded", run_id=run_id, extra={"steps": [s["step"] for s in summary["steps"]]})
         if args.print_json:
             print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
-        return 1 if failed and not succeeded else 0
+        # A partial_success still means at least one stage is not running.
+        # Return non-zero so cron_pipeline_check can alert instead of reporting
+        # "normal, no new TODO" while quality/health gates are paused/skipped.
+        return 1 if failed else 0
     finally:
         release_lock()
 

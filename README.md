@@ -337,6 +337,7 @@ Additional operational notes:
 - [Security model](docs/security-model.md)
 - [Known limitations](docs/known-limitations.md)
 - [Troubleshooting](docs/troubleshooting.md)
+- [Operations and dashboard status](docs/operations-dashboard.md)
 
 ## Project Structure
 
@@ -422,6 +423,11 @@ The Postgres-backed job queue provides crash recovery, idempotent submission, fa
 This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
 
 ## Changelog
+
+### Unreleased
+- Updated Hermes active-runner behavior so any `partial_success` exits non-zero and emits an error event for alerting.
+- Added the extraction quality verification/re-extraction gate to the active-run sequence.
+- Added `docs/operations-dashboard.md` with the 2026-07-08 pipeline/dashboard field status and verification checklist.
 
 ### v0.8.2
 - Refactored `extract_entities.py` and `extract_schedules.py` to use centralized LLM client (`kct.extract.client`)
