@@ -70,17 +70,32 @@ def check_file(name: str, state_dir: Path | None = None, fix: bool = False) -> d
     age_hours = (datetime.now(timezone.utc) - mtime).total_seconds() / 3600
     stale = age_hours > threshold
 
-    # Optional: validate JSON files
+    # Optional: validate JSON/JSONL state files. JSONL allows blank lines, but
+    # every non-empty line must be parseable on its own.
     parse_ok = True
-    if name.endswith(".json") and fpath.stat().st_size > 0:
+    parse_error = None
+    if (name.endswith(".json") or name.endswith(".jsonl")) and fpath.stat().st_size > 0:
         try:
             raw = fpath.read_bytes()
             if b"\x00" in raw:
                 parse_ok = False
+                parse_error = "null byte found"
+            elif name.endswith(".jsonl"):
+                text = raw.decode("utf-8-sig")
+                for lineno, line in enumerate(text.splitlines(), start=1):
+                    if not line.strip():
+                        continue
+                    try:
+                        json.loads(line)
+                    except json.JSONDecodeError as exc:
+                        parse_ok = False
+                        parse_error = f"line {lineno}: {exc.msg}"
+                        break
             else:
                 json.loads(raw)
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             parse_ok = False
+            parse_error = str(exc)
 
     return {
         "file": name,
@@ -88,6 +103,7 @@ def check_file(name: str, state_dir: Path | None = None, fix: bool = False) -> d
         "stale": stale,
         "age_hours": round(age_hours, 1),
         "parse_ok": parse_ok,
+        "parse_error": parse_error,
         "threshold_hours": threshold,
     }
 

@@ -33,6 +33,7 @@ import os
 import shutil
 import subprocess
 import sys
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -49,6 +50,7 @@ DEFAULT_QUEUE_PATH = STATE_DIR / "transcription_retry_queue.jsonl"
 DEFAULT_REPORT_PATH = WORKSPACE / "reports" / "transcription_health_taxonomy.json"
 DEFAULT_LOG_PATH = LOG_DIR / "transcription_retry_worker.jsonl"
 DEFAULT_BACKUP_ROOT = STATE_DIR / "backups"
+DEFAULT_LOCK_PATH = STATE_DIR / "transcription_retry_queue.lock"
 
 ACTIONABLE_REASON_TO_ACTION = {
     "missing_transcript": "transcribe",
@@ -187,6 +189,48 @@ def write_queue(path: Path, entries: Iterable[dict[str, Any]]) -> None:
     safe_write_text(path, "\n".join(lines) + ("\n" if lines else ""))
 
 
+def acquire_queue_lock(lock_path: Path, *, now: str, stale_seconds: int = 60 * 60 * 8) -> bool:
+    """Acquire a process-level queue lock using atomic mkdir.
+
+    The lock is intentionally coarse-grained: only one worker may mutate or run
+    queue entries at a time.  Stale locks are reclaimed with an atomic rename so
+    two contenders cannot both delete/create the live lock directory.
+    """
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        lock_path.mkdir()
+        safe_write_text(lock_path / "owner.json", json.dumps({"pid": os.getpid(), "started_at": now}, sort_keys=True) + "\n")
+        return True
+    except FileExistsError:
+        owner_file = lock_path / "owner.json"
+        stale = False
+        try:
+            owner = json.loads(owner_file.read_text(encoding="utf-8"))
+            started = parse_iso(str(owner.get("started_at")))
+            stale = (parse_iso(now) - started).total_seconds() > stale_seconds
+        except Exception:
+            stale = True
+        if not stale:
+            return False
+        tombstone = lock_path.with_name(f"{lock_path.name}.stale.{uuid.uuid4().hex}")
+        try:
+            lock_path.rename(tombstone)
+        except FileNotFoundError:
+            return acquire_queue_lock(lock_path, now=now, stale_seconds=stale_seconds)
+        except OSError:
+            return False
+        try:
+            lock_path.mkdir()
+            safe_write_text(lock_path / "owner.json", json.dumps({"pid": os.getpid(), "started_at": now}, sort_keys=True) + "\n")
+            return True
+        finally:
+            shutil.rmtree(tombstone, ignore_errors=True)
+
+
+def release_queue_lock(lock_path: Path) -> None:
+    shutil.rmtree(lock_path, ignore_errors=True)
+
+
 def merge_queues(existing: list[dict[str, Any]], generated: list[dict[str, Any]], *, now: str) -> list[dict[str, Any]]:
     """기존 큐와 새로 생성된 엔트리를 병합."""
     by_id = {str(e["queue_id"]): e for e in existing}
@@ -235,10 +279,13 @@ def entry_due(entry: dict[str, Any], *, now: str) -> bool:
     """엔트리가 지금 실행 가능한지 확인."""
     if entry.get("terminal_failure") or entry.get("status") in STATUS_TERMINAL:
         return False
+    if entry.get("status") == "running":
+        lease_expires_at = entry.get("lease_expires_at")
+        return bool(lease_expires_at and parse_iso(str(lease_expires_at)) <= parse_iso(now))
     retry_at = entry.get("next_retry_at")
     if retry_at:
         return parse_iso(str(retry_at)) <= parse_iso(now)
-    return entry.get("status", "pending") in {"pending", "failed", "running"}
+    return entry.get("status", "pending") in {"pending", "failed"}
 
 
 def _wsl_to_win_path(wsl_path: str) -> str:
@@ -405,13 +452,22 @@ def run_worker(
         "dry_run": dry_run, "selected": len(due),
         "commands": commands,
         "succeeded": 0, "failed": 0, "backup": None,
+        "locked": False,
     }
     if dry_run or not due:
         return result
 
-    backup = backup_queue(queue_path, workspace, now=ts)
-    result["backup"] = str(backup) if backup else None
-    append_jsonl(
+    lock_path = queue_path.with_suffix(queue_path.suffix + ".lock")
+    if not acquire_queue_lock(lock_path, now=ts, stale_seconds=timeout_seconds + 60):
+        result.update({"selected": 0, "commands": [], "locked": True})
+        return result
+    run_token = f"rqrun_{uuid.uuid4().hex}"
+    lease_expires_at = (parse_iso(ts) + timedelta(seconds=timeout_seconds + 60)).isoformat(timespec="seconds")
+
+    try:
+        backup = backup_queue(queue_path, workspace, now=ts)
+        result["backup"] = str(backup) if backup else None
+        append_jsonl(
         DEFAULT_LOG_PATH
         if workspace == WORKSPACE
         else workspace / "logs" / "transcription_retry_worker.jsonl",
@@ -421,70 +477,84 @@ def run_worker(
             "backup": result["backup"],
             "selected": len(due),
         },
-    )
-    by_id = {str(e.get("queue_id")): e for e in entries}
-    log_path = DEFAULT_LOG_PATH if workspace == WORKSPACE else workspace / "logs" / "transcription_retry_worker.jsonl"
-    for item in commands:
-        entry = by_id[str(item["queue_id"])]
-        argv = item["argv"]
-        env = item.get("env")
-        entry["status"] = "running"
-        entry["updated_at"] = ts
-        write_queue(queue_path, entries)
-        append_jsonl(
-            log_path,
-            {
-                "at": ts, "event": "attempt_start",
-                "queue_id": entry.get("queue_id"),
-                "next_action": entry.get("next_action"),
-                "argv": argv,
-            },
         )
-        try:
-            if env:
-                cp = runner(argv, cwd=str(workspace), timeout=timeout_seconds, text=True, capture_output=True, env=env)
-            else:
-                cp = runner(argv, cwd=str(workspace), timeout=timeout_seconds, text=True, capture_output=True)
-            rc = int(getattr(cp, "returncode", 1))
-            stdout = str(getattr(cp, "stdout", "") or "")
-            stderr = str(getattr(cp, "stderr", "") or "")
-            if rc == 0:
-                mark_success(entry, now=ts, argv=argv, stdout=stdout, stderr=stderr)
-                result["succeeded"] += 1
-                append_jsonl(
-                    log_path,
-                    {
-                        "at": ts, "event": "attempt_succeeded",
-                        "queue_id": entry.get("queue_id"),
-                        "returncode": rc,
-                    },
-                )
-            else:
-                err = summarize_error(rc, stderr, stdout)
-                mark_failure(entry, now=ts, argv=argv, error=err)
+        by_id = {str(e.get("queue_id")): e for e in entries}
+        log_path = DEFAULT_LOG_PATH if workspace == WORKSPACE else workspace / "logs" / "transcription_retry_worker.jsonl"
+        for item in commands:
+            entry = by_id[str(item["queue_id"])]
+            argv = item["argv"]
+            env = item.get("env")
+            entry["status"] = "running"
+            entry["locked_at"] = ts
+            entry["lease_expires_at"] = lease_expires_at
+            entry["run_token"] = run_token
+            entry["updated_at"] = ts
+            write_queue(queue_path, entries)
+            append_jsonl(
+                log_path,
+                {
+                    "at": ts, "event": "attempt_start",
+                    "queue_id": entry.get("queue_id"),
+                    "next_action": entry.get("next_action"),
+                    "argv": argv,
+                },
+            )
+            try:
+                if env:
+                    cp = runner(argv, cwd=str(workspace), timeout=timeout_seconds, text=True, capture_output=True, env=env)
+                else:
+                    cp = runner(argv, cwd=str(workspace), timeout=timeout_seconds, text=True, capture_output=True)
+                rc = int(getattr(cp, "returncode", 1))
+                stdout = str(getattr(cp, "stdout", "") or "")
+                stderr = str(getattr(cp, "stderr", "") or "")
+                if rc == 0:
+                    mark_success(entry, now=ts, argv=argv, stdout=stdout, stderr=stderr)
+                    entry.pop("locked_at", None)
+                    entry.pop("lease_expires_at", None)
+                    entry.pop("run_token", None)
+                    result["succeeded"] += 1
+                    append_jsonl(
+                        log_path,
+                        {
+                            "at": ts, "event": "attempt_succeeded",
+                            "queue_id": entry.get("queue_id"),
+                            "returncode": rc,
+                        },
+                    )
+                else:
+                    err = summarize_error(rc, stderr, stdout)
+                    mark_failure(entry, now=ts, argv=argv, error=err)
+                    entry.pop("locked_at", None)
+                    entry.pop("lease_expires_at", None)
+                    entry.pop("run_token", None)
+                    result["failed"] += 1
+                    append_jsonl(
+                        log_path,
+                        {
+                            "at": ts, "event": "attempt_failed",
+                            "queue_id": entry.get("queue_id"),
+                            "returncode": rc,
+                            "error": redact_sensitive_text(err, limit=500),
+                        },
+                    )
+            except (OSError, subprocess.SubprocessError) as exc:  # noqa: BLE001
+                mark_failure(entry, now=ts, argv=argv, error=redact_sensitive_text(repr(exc), limit=500))
+                entry.pop("locked_at", None)
+                entry.pop("lease_expires_at", None)
+                entry.pop("run_token", None)
                 result["failed"] += 1
                 append_jsonl(
                     log_path,
                     {
-                        "at": ts, "event": "attempt_failed",
+                        "at": ts, "event": "attempt_exception",
                         "queue_id": entry.get("queue_id"),
-                        "returncode": rc,
-                        "error": redact_sensitive_text(err, limit=500),
+                        "error": redact_sensitive_text(repr(exc), limit=500),
                     },
                 )
-        except (OSError, subprocess.SubprocessError) as exc:  # noqa: BLE001
-            mark_failure(entry, now=ts, argv=argv, error=redact_sensitive_text(repr(exc), limit=500))
-            result["failed"] += 1
-            append_jsonl(
-                log_path,
-                {
-                    "at": ts, "event": "attempt_exception",
-                    "queue_id": entry.get("queue_id"),
-                    "error": redact_sensitive_text(repr(exc), limit=500),
-                },
-            )
-        write_queue(queue_path, entries)
-    return result
+            write_queue(queue_path, entries)
+        return result
+    finally:
+        release_queue_lock(lock_path)
 
 
 def generate_queue(report_path: Path, queue_path: Path, *, merge: bool, now: str | None = None) -> dict[str, Any]:

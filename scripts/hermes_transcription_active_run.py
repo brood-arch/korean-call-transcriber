@@ -162,10 +162,20 @@ def acquire_lock(run_id: str, stale_seconds: int) -> bool:
         if not stale:
             safe_write_json(SUMMARY_PATH, {"run_id": run_id, "status": "skipped_locked", "lock_owner": owner, "ended_at": iso_now()})
             return False
-        shutil.rmtree(LOCK_DIR, ignore_errors=True)
-        LOCK_DIR.mkdir()
-        safe_write_json(LOCK_DIR / "owner.json", {"run_id": run_id, "pid": os.getpid(), "started_at": iso_now(), "reclaimed_stale": owner})
-        return True
+        tombstone = LOCK_DIR.with_name(f"{LOCK_DIR.name}.stale.{uuid.uuid4().hex}")
+        try:
+            LOCK_DIR.rename(tombstone)
+        except FileNotFoundError:
+            return acquire_lock(run_id, stale_seconds)
+        except OSError:
+            safe_write_json(SUMMARY_PATH, {"run_id": run_id, "status": "skipped_locked", "lock_owner": owner, "ended_at": iso_now()})
+            return False
+        try:
+            LOCK_DIR.mkdir()
+            safe_write_json(LOCK_DIR / "owner.json", {"run_id": run_id, "pid": os.getpid(), "started_at": iso_now(), "reclaimed_stale": owner})
+            return True
+        finally:
+            shutil.rmtree(tombstone, ignore_errors=True)
 
 
 def _load_error_counter() -> dict[str, Any]:
@@ -343,6 +353,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--diarize-only", action="store_true", help="Shorthand: --skip-extract --skip-obsidian --skip-shared-events")
     p.add_argument("--obsidian-only", action="store_true", help="Shorthand: --skip-transcribe --skip-extract --skip-shared-events")
     p.add_argument("--health-only", action="store_true", help="Shorthand: --skip-transcribe --skip-extract --skip-obsidian --skip-shared-events")
+    p.add_argument("--continue-on-error", action="store_true", help="Continue dependent side-effect steps after upstream failure")
     args = p.parse_args(argv)
 
     # Expand convenience flags
@@ -406,34 +417,62 @@ def main(argv: list[str] | None = None) -> int:
             _record_step_result(name, result.get("returncode", 1), diagnostic)
             return result
 
+        def _block_step(name: str, reason: str) -> dict[str, Any]:
+            row = {
+                "step": name,
+                "returncode": -3,
+                "duration_seconds": 0,
+                "stdout_tail": "",
+                "stderr_tail": f"BLOCKED: {reason}",
+                "blocked_by": reason,
+            }
+            append_log({"at": iso_now(), "run_id": run_id, "event": "step_blocked", **row})
+            summary["steps"].append(row)
+            return row
+
+        upstream_failed = False
+
         if not args.skip_transcribe:
-            _run_step(
+            row = _run_step(
                 "call_recordings_automation",
                 win_py_step("call_recordings_automation.py", ["--transcribe-limit", str(args.transcribe_limit), "--days", str(args.days), "--transcribe-only"]),
                 timeout=7200,
             )
+            upstream_failed = upstream_failed or int(row.get("returncode", 1)) != 0
         if not args.skip_transcribe:
-            _run_step(
+            row = _run_step(
                 "batch_diarize",
                 [VENV_PYTHON, str(SCRIPTS / "batch_diarize.py"), "--days", str(args.days)],
                 timeout=3600,
             )
+            upstream_failed = upstream_failed or int(row.get("returncode", 1)) != 0
+        block_downstream = upstream_failed and not args.continue_on_error
         if not args.health_only:
-            _run_step("build_chroma_index", win_py_step("build_chroma_index.py", []), timeout=3600)
+            if block_downstream:
+                _block_step("build_chroma_index", "upstream transcription/diarization failure")
+            else:
+                _run_step("build_chroma_index", win_py_step("build_chroma_index.py", []), timeout=3600)
         if not args.skip_extract:
-            _run_step("extract_all_today", win_py_step("extract_all.py", ["--today", "--batch-size", "1"], env={"KCT_DISABLE_TELEGRAM_NOTIFY": "1"}), timeout=3600)
-            # 추출 품질 검증 + 저품질 재추출
-            _run_step(
-                "verify_extraction_quality",
-                [str(VENV_PYTHON), str(SCRIPTS / "verify_extraction_quality.py"), "--today", "--re-extract"],
-                timeout=1800,
-            )
+            if block_downstream:
+                _block_step("extract_all_today", "upstream transcription/diarization failure")
+                _block_step("verify_extraction_quality", "upstream transcription/diarization failure")
+            else:
+                _run_step("extract_all_today", win_py_step("extract_all.py", ["--today", "--batch-size", "1"], env={"KCT_DISABLE_TELEGRAM_NOTIFY": "1"}), timeout=3600)
+                # 추출 품질 검증 + 저품질 재추출
+                _run_step(
+                    "verify_extraction_quality",
+                    [str(VENV_PYTHON), str(SCRIPTS / "verify_extraction_quality.py"), "--today", "--re-extract"],
+                    timeout=1800,
+                )
         if not args.skip_obsidian:
-            _run_step(
-                "sync_transcripts_to_obsidian",
-                ["python3", str(SCRIPTS / "obsidian_sync_wsl.py"), "transcripts"],
-                timeout=1800,
-            )
+            if block_downstream:
+                _block_step("sync_transcripts_to_obsidian", "upstream transcription/diarization failure")
+            else:
+                _run_step(
+                    "sync_transcripts_to_obsidian",
+                    ["python3", str(SCRIPTS / "obsidian_sync_wsl.py"), "transcripts"],
+                    timeout=1800,
+                )
         if not args.skip_shared_events:
             _run_step("index_shared_events", ["bash", str(SCRIPTS / "index_shared_events_wsl.sh")], timeout=1800)
         if not args.skip_mempalace:

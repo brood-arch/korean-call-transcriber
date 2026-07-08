@@ -167,3 +167,31 @@ def test_process_single_audio_success_path_does_not_pass_flush_to_logger(tmp_pat
 
     assert bt._process_single_audio(audio, out_path, argparse.Namespace(), 1, 1) is True
     assert out_path.exists()
+
+
+def test_force_retry_overwrites_canonical_transcript_without_timestamp_derivative(tmp_path, monkeypatch):
+    """#9: --force must repair canonical stem.txt, not create stem_HHMMSS.txt."""
+    from kct.transcribe import batch_transcribe as bt
+
+    audio = tmp_path / "call_001.m4a"
+    _write_audio(audio)
+    output_dir = tmp_path / "transcripts"
+    output_dir.mkdir()
+    out_path = output_dir / "call_001.txt"
+    out_path.write_text("old canonical\n", encoding="utf-8")
+
+    monkeypatch.setattr(bt, "OUTPUT_DIR", output_dir)
+    monkeypatch.setattr(bt, "get_audio_duration", lambda _path: 30.0)
+    monkeypatch.setattr(
+        bt,
+        "_perform_transcription",
+        lambda *_args: ([{"start": 0.0, "end": 1.0, "text": "새 전사 " * 80}], 30.0, {}, False),
+    )
+    monkeypatch.setattr(bt, "apply_corrections", lambda text, source="": (text, []))
+    monkeypatch.setattr(bt, "log_quality", lambda *args, **kwargs: None)
+
+    assert bt._process_single_audio(audio, out_path, argparse.Namespace(force=True), 1, 1) is True
+
+    assert "새 전사" in out_path.read_text(encoding="utf-8")
+    assert not list(output_dir.glob("call_001_[0-9][0-9][0-9][0-9][0-9][0-9].txt"))
+    assert list(output_dir.glob("call_001.txt.bak_*"))

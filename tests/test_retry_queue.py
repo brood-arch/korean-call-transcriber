@@ -234,4 +234,37 @@ def test_worker_marks_terminal_failure_after_max_attempts(tmp_path):
     assert updated["next_retry_at"] is None
 
 
+def test_running_entry_is_not_due_until_lease_expires():
+    """#10: running entries must not be immediately reclaimed without an expired lease."""
+    from kct.queue import retry_queue as q
 
+    now = "2026-05-12T10:10:00+09:00"
+    fresh = {"status": "running", "lease_expires_at": "2026-05-12T10:20:00+09:00"}
+    expired = {"status": "running", "lease_expires_at": "2026-05-12T10:00:00+09:00"}
+
+    assert q.entry_due(fresh, now=now) is False
+    assert q.entry_due(expired, now=now) is True
+
+
+def test_worker_returns_locked_without_mutating_queue(tmp_path, monkeypatch):
+    """#10: a live queue lock prevents a second worker from executing the same entry."""
+    from kct.queue import retry_queue as q
+
+    queue_path = tmp_path / "transcription_retry_queue.jsonl"
+    entries = q.build_queue_from_report(_report(tmp_path), now="2026-05-12T10:00:00+09:00")[:1]
+    q.write_queue(queue_path, entries)
+    before = queue_path.read_text(encoding="utf-8")
+    monkeypatch.setattr(q, "acquire_queue_lock", lambda *args, **kwargs: False)
+
+    result = q.run_worker(
+        queue_path=queue_path,
+        workspace=tmp_path,
+        dry_run=False,
+        limit=1,
+        now="2026-05-12T10:10:00+09:00",
+        runner=lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("runner must not execute")),
+    )
+
+    assert result["locked"] is True
+    assert result["selected"] == 0
+    assert queue_path.read_text(encoding="utf-8") == before

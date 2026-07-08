@@ -75,4 +75,43 @@ def test_transcription_gap_analyzer_taxonomy_and_derivatives(tmp_path):
     assert all(row["reason"] != "derived_excluded" for row in report["action_queue"])
 
 
+def test_gap_analyzer_reports_corrupt_state_instead_of_treating_as_empty(tmp_path):
+    """#12: corrupt state files must be observable and make health dangerous."""
+    from kct.queue import gap_analyzer as a
+
+    audio_dir = tmp_path / "audio"
+    transcript_dir = tmp_path / "transcripts"
+    state_dir = tmp_path / "state"
+    integrated_dir = state_dir / "integrated_extraction"
+    log_dir = tmp_path / "logs"
+    for p in (audio_dir, transcript_dir, state_dir, integrated_dir, log_dir):
+        p.mkdir(parents=True, exist_ok=True)
+
+    stem = "ok_call_20260510101010"
+    (audio_dir / f"{stem}.m4a").write_bytes(b"x" * 2048)
+    (transcript_dir / f"{stem}.txt").write_text("정상 전사본입니다. 내용 충분함.", encoding="utf-8")
+    blacklist_file = state_dir / "transcribe_blacklist.json"
+    blacklist_file.write_text("{invalid json", encoding="utf-8")
+    (state_dir / "chroma_index_state.json").write_text(json.dumps({"files": {f"{stem}.txt": {}}}), encoding="utf-8")
+    (state_dir / "sync_transcripts_state.json").write_text(json.dumps({"processed": {f"{stem}.txt": {}}}), encoding="utf-8")
+    (integrated_dir / "batch_0000.json").write_text(json.dumps({"files": [stem]}), encoding="utf-8")
+    (log_dir / "transcribe_vv.log").write_text("", encoding="utf-8")
+
+    report = a.analyze(
+        workspace=tmp_path,
+        audio_dir=audio_dir,
+        transcript_dir=transcript_dir,
+        blacklist_file=blacklist_file,
+        chroma_state_file=state_dir / "chroma_index_state.json",
+        obsidian_state_file=state_dir / "sync_transcripts_state.json",
+        integrated_extraction_dir=integrated_dir,
+        transcribe_log=log_dir / "transcribe_vv.log",
+    )
+
+    assert report["health"] == "danger"
+    assert report["exit_code"] == 2
+    assert report["state_errors"]
+    assert str(blacklist_file) == report["state_errors"][0]["path"]
+
+
 

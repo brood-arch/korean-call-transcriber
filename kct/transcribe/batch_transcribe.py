@@ -529,6 +529,7 @@ def align_and_diarize_subprocess(
 def _write_transcript_output(
     audio_path: Path, out_path: Path, final_segments: list[dict],
     audio_dur: float, quality_meta: dict, had_diary_fail: bool, t0: float,
+    *, force: bool = False,
 ) -> bool:
     """Apply corrections, write output, log results. Returns True on success."""
     text = _format_segments_text(final_segments)
@@ -562,7 +563,14 @@ def _write_transcript_output(
 
     actual_out = out_path
     if out_path.exists():
-        actual_out = OUTPUT_DIR / f"{audio_path.stem}_{datetime.now().strftime('%H%M%S')}.txt"
+        if force:
+            backup_out = out_path.with_suffix(out_path.suffix + f".bak_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+            try:
+                backup_out.write_text(out_path.read_text(encoding="utf-8"), encoding="utf-8")
+            except FileNotFoundError:
+                pass
+        else:
+            actual_out = OUTPUT_DIR / f"{audio_path.stem}_{datetime.now().strftime('%H%M%S')}.txt"
     safe_write_text(actual_out, corrected_text + "\n")
 
     elapsed = time.time() - t0
@@ -590,7 +598,10 @@ def _process_single_audio(audio_path: Path, out_path: Path, args: argparse.Names
 
     try:
         final_segments, audio_dur, quality_meta, had_diary_fail = _perform_transcription(audio_path, args)
-        _write_transcript_output(audio_path, out_path, final_segments, audio_dur, quality_meta, had_diary_fail, t0)
+        _write_transcript_output(
+            audio_path, out_path, final_segments, audio_dur, quality_meta, had_diary_fail, t0,
+            force=bool(getattr(args, "force", False)),
+        )
         return True
     except Exception as e:  # noqa: BLE001
         err_str = str(e)

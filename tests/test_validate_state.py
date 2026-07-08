@@ -88,6 +88,8 @@ def test_check_all_fresh_files(tmp_path):
         fpath = tmp_path / name
         if name.endswith(".json"):
             fpath.write_text(json.dumps({"key": "val"}), encoding="utf-8")
+        elif name.endswith(".jsonl"):
+            fpath.write_text('{"event": "one"}\n{"event": "two"}\n', encoding="utf-8")
         else:
             fpath.write_text("line1\nline2\n", encoding="utf-8")
     report = check_all(state_dir=tmp_path)
@@ -122,8 +124,18 @@ def test_check_jsonl_file(tmp_path):
     fpath.write_text('{"event": "one"}\n{"event": "two"}\n', encoding="utf-8")
     result = check_file("events.jsonl", state_dir=tmp_path)
     assert result["exists"] is True
-    # jsonl files don't get JSON parse check (only .json files do)
     assert result.get("parse_ok", True) is True
+
+
+def test_check_jsonl_file_reports_invalid_line_number(tmp_path):
+    """#14: JSONL state is validated line-by-line, with blank lines allowed."""
+    from kct.pipeline.validate_state import check_file
+    fpath = tmp_path / "events.jsonl"
+    fpath.write_text('{"event": "one"}\n\n{invalid}\n', encoding="utf-8")
+    result = check_file("events.jsonl", state_dir=tmp_path)
+    assert result["exists"] is True
+    assert result["parse_ok"] is False
+    assert "line 3" in result["parse_error"]
 
 
 # ── Fix mode ────────────────────────────────────────────────────────────

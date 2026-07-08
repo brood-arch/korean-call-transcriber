@@ -80,13 +80,19 @@ class AnalyzerError(RuntimeError):
     pass
 
 
-def load_json(path: Path, default: Any) -> Any:
-    """JSON 파일을 로드하며 실패 시 기본값을 반환."""
+def load_json(path: Path, default: Any, *, state_errors: list[dict[str, str]] | None = None) -> Any:
+    """JSON 파일을 로드하며 실패 시 기본값을 반환.
+
+    Missing state remains a tolerated empty default. Corrupt or unreadable state
+    is recorded so health reports do not silently treat it as valid empty state.
+    """
     if not path.exists():
         return default
     try:
         return json.loads(path.read_text("utf-8-sig"))
     except (json.JSONDecodeError, OSError) as exc:
+        if state_errors is not None:
+            state_errors.append({"path": str(path), "error": str(exc)})
         log.debug("Failed to load JSON %s: %s", path, exc)
         return default
 
@@ -169,9 +175,9 @@ def file_record(
     return data
 
 
-def load_blacklist(path: Path) -> tuple[dict[str, dict[str, Any]], set[str], set[str]]:
+def load_blacklist(path: Path, *, state_errors: list[dict[str, str]] | None = None) -> tuple[dict[str, dict[str, Any]], set[str], set[str]]:
     """블랙리스트 파일을 로드해 엔트리, 블랙리스트, 실패 집합을 반환."""
-    raw = load_json(path, {})
+    raw = load_json(path, {}, state_errors=state_errors)
     entries = {k: v for k, v in raw.items() if k != "_meta" and isinstance(v, dict)}
     blacklisted = {k for k, v in entries.items() if v.get("blacklisted_at")}
     failed = {
@@ -182,27 +188,27 @@ def load_blacklist(path: Path) -> tuple[dict[str, dict[str, Any]], set[str], set
     return entries, blacklisted, failed
 
 
-def load_chroma_basenames(path: Path) -> set[str]:
+def load_chroma_basenames(path: Path, *, state_errors: list[dict[str, str]] | None = None) -> set[str]:
     """ChromaDB 인덱스 상태 파일에서 basename 집합을 로드."""
-    raw = load_json(path, {})
+    raw = load_json(path, {}, state_errors=state_errors)
     files = raw.get("files", {}) if isinstance(raw, dict) else {}
     return {Path(str(k).replace("\\", "/")).name for k in files}
 
 
-def load_obsidian_processed(path: Path) -> set[str]:
+def load_obsidian_processed(path: Path, *, state_errors: list[dict[str, str]] | None = None) -> set[str]:
     """Obsidian 동기화 상태에서 처리 완료된 파일명 집합을 로드."""
-    raw = load_json(path, {})
+    raw = load_json(path, {}, state_errors=state_errors)
     processed = raw.get("processed", {}) if isinstance(raw, dict) else {}
     return {str(k) for k in processed}
 
 
-def load_integrated_processed(path: Path) -> set[str]:
+def load_integrated_processed(path: Path, *, state_errors: list[dict[str, str]] | None = None) -> set[str]:
     """통합 추출 배치 파일들에서 처리된 stem 집합을 로드."""
     processed: set[str] = set()
     if not path.exists():
         return processed
     for batch in sorted(path.glob("batch_*.json")):
-        raw = load_json(batch, {})
+        raw = load_json(batch, {}, state_errors=state_errors)
         for stem in raw.get("files", []) if isinstance(raw, dict) else []:
             processed.add(str(stem))
     return processed
@@ -343,10 +349,11 @@ def analyze(
     audio_by_stem = {p.stem: p for p in audio_files}
     transcript_by_stem = {p.stem: p for p in transcript_files}
 
-    blacklist_entries, blacklisted_stems, failed_stems = load_blacklist(blacklist_file)
-    chroma_basenames = load_chroma_basenames(chroma_state_file)
-    obsidian_processed = load_obsidian_processed(obsidian_state_file)
-    integrated_processed = load_integrated_processed(integrated_extraction_dir)
+    state_errors: list[dict[str, str]] = []
+    blacklist_entries, blacklisted_stems, failed_stems = load_blacklist(blacklist_file, state_errors=state_errors)
+    chroma_basenames = load_chroma_basenames(chroma_state_file, state_errors=state_errors)
+    obsidian_processed = load_obsidian_processed(obsidian_state_file, state_errors=state_errors)
+    integrated_processed = load_integrated_processed(integrated_extraction_dir, state_errors=state_errors)
     diarization_failed = load_diarization_failed(transcribe_log)
 
     cause_files = _classify_gaps(
@@ -385,7 +392,10 @@ def analyze(
         ),
     }
 
-    if (
+    if state_errors:
+        health = "danger"
+        exit_code = 2
+    elif (
         category_counts["missing_transcript"]
         or category_counts["transcription_failed"]
         or category_counts["missing_sync"]
@@ -415,6 +425,7 @@ def analyze(
         "transcript_dir": str(transcript_dir),
         "health": health,
         "exit_code": exit_code,
+        "state_errors": state_errors,
         "method": {
             "pipeline_style_count": "Count all *.txt under transcript_dir, including derived recheck txt files.",
             "exact_transcript_count": (
