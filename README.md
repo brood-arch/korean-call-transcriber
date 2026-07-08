@@ -424,6 +424,9 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 
 ## Changelog
 
+### v1.1.1
+- Updated package license metadata to PEP 639 format and removed deprecated license classifiers so setuptools builds no longer emit license deprecation warnings.
+
 ### v1.1.0
 - Added Hermes active-runner orchestration for the full transcription pipeline.
 - Added WSL/Windows workspace launcher scripts and operations dashboard documentation.

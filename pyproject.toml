@@ -1,13 +1,14 @@
 [build-system]
-requires = ["setuptools>=68.0"]
+requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "korean-call-transcriber"
-version = "1.1.0"
+version = "1.1.1"
 description = "Korean phone call transcription pipeline with Whisper + speaker diarization, auto TODO/schedule/entity extraction"
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 authors = [
     {name = "Sinhyuk Lee"},
@@ -16,7 +17,6 @@ keywords = ["korean", "whisper", "transcription", "diarization", "todo", "obsidi
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
