@@ -51,7 +51,9 @@ else:
     repo_root = _SCRIPT_DIR.parent
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
-    from kct.config import LOG_DIR as _LOG_DIR, STATE_DIR as _STATE_DIR, WORKSPACE as _WORKSPACE
+    from kct.config import LOG_DIR as _LOG_DIR
+    from kct.config import STATE_DIR as _STATE_DIR
+    from kct.config import WORKSPACE as _WORKSPACE
     from kct.pipeline.paths import wsl_to_win
 
     class _FallbackPaths:
